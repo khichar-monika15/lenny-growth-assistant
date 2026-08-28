@@ -21,7 +21,7 @@ class Session(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
-    metadata = Column(JSONB, default={})
+    extra_metadata = Column("metadata", JSONB, default={})
 
 
 class Message(Base):
@@ -36,7 +36,7 @@ class Message(Base):
     token_count = Column(Integer)
     model_provider = Column(String(50))
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    metadata = Column(JSONB, default={})
+    extra_metadata = Column("metadata", JSONB, default={})
 
 
 class Transcript(Base):
@@ -53,7 +53,7 @@ class Transcript(Base):
     content_hash = Column(String(64), nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
-    metadata = Column(JSONB, default={})
+    extra_metadata = Column("metadata", JSONB, default={})
 
 
 class Chunk(Base):
@@ -69,4 +69,4 @@ class Chunk(Base):
     start_char = Column(Integer)
     end_char = Column(Integer)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    metadata = Column(JSONB, default={})
+    extra_metadata = Column("metadata", JSONB, default={})
