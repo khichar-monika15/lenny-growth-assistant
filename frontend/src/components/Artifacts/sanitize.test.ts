@@ -92,24 +92,26 @@ describe('buildFrameDocument', () => {
   })
 })
 
-describe('buildFrameDocument themes', () => {
-  it('renders a light palette by default', () => {
+describe('buildFrameDocument palette', () => {
+  it('always renders the page light, whatever the app theme', () => {
+    // Generated HTML assumes a light canvas. Theming the frame left the
+    // model's own background winning while our text colour still applied,
+    // producing light text on a light background.
     const doc = buildFrameDocument('<p>hi</p>')
 
     expect(doc).toContain('color-scheme: light')
     expect(doc).toContain('#ffffff')
+    expect(doc).not.toContain('#1d1f23')
   })
 
-  it('renders a dark palette when asked', () => {
-    const doc = buildFrameDocument('<p>hi</p>', 'dark')
+  it('keeps its own defaults at zero specificity so model styles win cleanly', () => {
+    const doc = buildFrameDocument('<p>hi</p>')
 
-    expect(doc).toContain('color-scheme: dark')
-    expect(doc).toContain('#1d1f23')
+    expect(doc).toContain(':where(body)')
   })
 
-  it('keeps the CSP in both themes', () => {
-    expect(buildFrameDocument('<p>hi</p>', 'dark')).toContain("default-src 'none'")
-    expect(buildFrameDocument('<p>hi</p>', 'light')).toContain("default-src 'none'")
+  it('keeps the CSP', () => {
+    expect(buildFrameDocument('<p>hi</p>')).toContain("default-src 'none'")
   })
 })
 
@@ -141,5 +143,25 @@ describe('full HTML documents from the model', () => {
     expect(html).not.toContain('<title')
     expect(html).not.toContain('Pricing</title>')
     expect(html).not.toContain('<meta')
+  })
+})
+
+describe('what the viewer reports as blocked', () => {
+  it('stays quiet about routine head elements', () => {
+    // A full document always carries these. Reporting them made harmless
+    // cleanup read as a security incident.
+    const { removed } = sanitizeHtml(
+      '<!DOCTYPE html><html><head><meta charset="utf-8"><title>T</title></head><body><p>hi</p></body></html>',
+    )
+
+    expect(removed).toEqual([])
+  })
+
+  it('still reports anything dangerous', () => {
+    const { removed } = sanitizeHtml('<script>x</script><form></form><img onerror="y">')
+
+    expect(removed.join(' ')).toContain('script')
+    expect(removed.join(' ')).toContain('form')
+    expect(removed.join(' ')).toContain('onerror')
   })
 })

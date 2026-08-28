@@ -25,6 +25,8 @@ export interface Message {
   sources?: Source[]
   artifact?: Artifact
   error?: string
+  /** The user pressed Stop, so the reply is deliberately incomplete. */
+  stopped?: boolean
   createdAt: string
 }
 

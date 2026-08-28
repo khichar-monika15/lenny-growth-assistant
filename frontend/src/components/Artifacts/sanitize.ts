@@ -37,6 +37,26 @@ const FORBIDDEN_TAGS = [
 
 const FORBIDDEN_ATTR = ['srcdoc', 'formaction', 'ping', 'http-equiv']
 
+/**
+ * Removals worth telling the user about.
+ *
+ * Models emit a full HTML document, so <meta>, <title> and <base> are stripped
+ * on almost every artifact. Reporting those made a routine, harmless cleanup
+ * look like a security incident. Only genuinely dangerous removals are shown.
+ */
+const NOTABLE_REMOVALS = new Set([
+  'script',
+  'iframe',
+  'object',
+  'embed',
+  'applet',
+  'form',
+  'input',
+  'button',
+  'textarea',
+  'link',
+])
+
 export interface SanitizeResult {
   html: string
   removed: string[]
@@ -57,7 +77,10 @@ export function sanitizeHtml(dirty: string): SanitizeResult {
   }
 
   DOMPurify.addHook('uponSanitizeElement', (node, data) => {
-    if (data.tagName && FORBIDDEN_TAGS.includes(data.tagName) && !data.allowedTags[data.tagName]) {
+    // Not gated on data.allowedTags: several of these (form, input, link) are
+    // in DOMPurify's default allow list and only removed because FORBID_TAGS
+    // overrides it, so that flag is still true here and hid them from the report.
+    if (data.tagName && NOTABLE_REMOVALS.has(data.tagName)) {
       record(node, 'element')
     }
   })
@@ -98,33 +121,36 @@ export const FRAME_CSP =
 /**
  * Wrap sanitised HTML in a minimal, CSP-locked document for `srcdoc`.
  *
- * The frame is a separate document, so it inherits nothing from the app's
- * stylesheet and needs the palette passed in explicitly.
+ * The page always renders light, whatever the app theme.
+ *
+ * Generated HTML brings its own stylesheet and assumes a light canvas. Theming
+ * the frame meant the model's `background-color: #f9f9f9` won the background
+ * while our dark `color` still applied, leaving light text on a light
+ * background. Partial overrides like that are the normal case, not the
+ * exception, so the document is treated as a sheet of paper and the dark
+ * surround is left to the panel around it.
  */
-export function buildFrameDocument(sanitized: string, theme: 'light' | 'dark' = 'light'): string {
-  const dark = theme === 'dark'
-  const palette = dark
-    ? { bg: '#1d1f23', fg: '#eceef1', border: '#303439', sunken: '#26292e' }
-    : { bg: '#ffffff', fg: '#1f2933', border: '#d8dee6', sunken: '#f5f7fa' }
-
+export function buildFrameDocument(sanitized: string): string {
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">
 <style>
-  :root { color-scheme: ${dark ? 'dark' : 'light'}; }
-  body {
+  :root { color-scheme: light; }
+  /* :where() keeps these at zero specificity, so any style the model supplies
+     wins cleanly rather than partially. */
+  :where(body) {
     margin: 0;
-    padding: 20px;
+    padding: 24px;
     font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: ${palette.fg};
-    background: ${palette.bg};
+    color: #1f2933;
+    background: #ffffff;
   }
-  img, table { max-width: 100%; }
-  table { border-collapse: collapse; }
-  th, td { border: 1px solid ${palette.border}; padding: 6px 10px; text-align: left; }
-  pre { overflow-x: auto; background: ${palette.sunken}; padding: 12px; border-radius: 6px; }
+  :where(img, table) { max-width: 100%; }
+  :where(table) { border-collapse: collapse; }
+  :where(th, td) { border: 1px solid #d8dee6; padding: 6px 10px; text-align: left; }
+  :where(pre) { overflow-x: auto; background: #f5f7fa; padding: 12px; border-radius: 6px; }
 </style>
 </head>
 <body>${sanitized}</body>

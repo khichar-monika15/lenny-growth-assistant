@@ -16,6 +16,20 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
+/**
+ * True when a rejection is the caller stopping the stream on purpose.
+ *
+ * Browsers disagree on the shape: Chrome throws a bare TypeError with
+ * "BodyStreamBuffer was aborted", Safari and Firefox throw AbortError. The
+ * signal is the reliable tell.
+ */
+function isAbort(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true
+  const name = (error as Error | undefined)?.name
+  const message = (error as Error | undefined)?.message ?? ''
+  return name === 'AbortError' || /abort/i.test(message)
+}
+
 export class ApiError extends Error {
   readonly hint?: string
 
@@ -101,7 +115,7 @@ export const api = {
         signal,
       })
     } catch (error) {
-      if ((error as Error).name === 'AbortError') return
+      if (isAbort(error, signal)) return
       throw new ApiError(
         'Cannot reach the backend.',
         `Is it running at ${API_BASE_URL}? Try: docker compose ps backend`,
@@ -118,7 +132,18 @@ export const api = {
 
     try {
       while (true) {
-        const { done, value } = await reader.read()
+        let chunk: ReadableStreamReadResult<Uint8Array>
+        try {
+          chunk = await reader.read()
+        } catch (error) {
+          // Stopping mid-stream rejects the pending read. That is the user
+          // getting what they asked for, not a failure, so it must not
+          // surface as "BodyStreamBuffer was aborted".
+          if (isAbort(error, signal)) return
+          throw error
+        }
+
+        const { done, value } = chunk
         if (done) break
 
         // stream: true keeps multi-byte characters intact across chunks.
@@ -143,7 +168,11 @@ export const api = {
         }
       }
     } finally {
-      reader.releaseLock()
+      try {
+        reader.releaseLock()
+      } catch {
+        // Already released by the abort.
+      }
     }
   },
 }

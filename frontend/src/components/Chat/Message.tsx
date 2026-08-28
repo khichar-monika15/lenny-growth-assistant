@@ -125,6 +125,10 @@ export function Message({
           )}
         </div>
 
+        {message.stopped && !message.error && (
+          <p className="message-stopped">Stopped. The reply is incomplete.</p>
+        )}
+
         {message.error && (
           <p className="message-error" role="alert">
             {message.error}
@@ -152,16 +156,18 @@ export function Message({
 
         {message.sources && <SourceList sources={message.sources} />}
 
-        {!isStreaming && message.content && (
-          <div className="message-actions">
-            <button
-              className={`action-button ${copied ? 'confirmed' : ''}`}
-              onClick={copy}
-              aria-label={copied ? 'Copied to clipboard' : 'Copy reply'}
-            >
-              {copied ? ICONS.check : ICONS.copy}
-              <span>{copied ? 'Copied' : 'Copy'}</span>
-            </button>
+        {!isStreaming && (message.content || message.stopped) && (
+          <div className={`message-actions ${message.stopped ? 'persistent' : ''}`}>
+            {message.content && (
+              <button
+                className={`action-button ${copied ? 'confirmed' : ''}`}
+                onClick={copy}
+                aria-label={copied ? 'Copied to clipboard' : 'Copy reply'}
+              >
+                {copied ? ICONS.check : ICONS.copy}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            )}
 
             {isLast && (
               <button

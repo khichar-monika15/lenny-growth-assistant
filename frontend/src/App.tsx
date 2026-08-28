@@ -215,11 +215,7 @@ export default function App() {
         {activeArtifact && (
           <>
             <div {...artifact.handleProps} />
-            <ArtifactViewer
-              artifact={activeArtifact}
-              theme={theme.resolved}
-              onClose={() => setActiveArtifact(null)}
-            />
+            <ArtifactViewer artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />
           </>
         )}
       </div>

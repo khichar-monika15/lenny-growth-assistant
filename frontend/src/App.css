@@ -945,6 +945,19 @@ button {
   }
 }
 
+.message-stopped {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* After a stop the actions stay visible: Regenerate is the obvious next
+   step and should not be hidden behind a hover. */
+.message-actions.persistent {
+  opacity: 1;
+}
+
 .message-error {
   margin: 10px 0 0;
   padding: 10px 13px;

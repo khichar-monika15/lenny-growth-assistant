@@ -3,7 +3,6 @@ import { buildFrameDocument, sanitizeHtml } from './sanitize'
 
 interface Props {
   html: string
-  theme: 'light' | 'dark'
 }
 
 /**
@@ -13,11 +12,11 @@ interface Props {
  * forms, popups, pointer lock and top-level navigation are all disabled, and
  * the frame gets an opaque origin with no access to this page.
  */
-export function SandboxedHtml({ html, theme }: Props) {
+export function SandboxedHtml({ html }: Props) {
   const { document, removed } = useMemo(() => {
     const result = sanitizeHtml(html)
-    return { document: buildFrameDocument(result.html, theme), removed: result.removed }
-  }, [html, theme])
+    return { document: buildFrameDocument(result.html), removed: result.removed }
+  }, [html])
 
   return (
     <div className="sandboxed-html">

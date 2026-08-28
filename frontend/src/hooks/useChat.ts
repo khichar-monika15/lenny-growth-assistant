@@ -112,13 +112,16 @@ export function useChat() {
           },
         })
       } catch (error) {
-        const apiError = error as ApiError
-        patchLast((message) => ({
-          ...message,
-          error: apiError.hint
-            ? `${apiError.message} ${apiError.hint}`
-            : apiError.message || 'Something went wrong.',
-        }))
+        // An abort is the user pressing Stop, not a failure.
+        if (!controller.signal.aborted) {
+          const apiError = error as ApiError
+          patchLast((message) => ({
+            ...message,
+            error: apiError.hint
+              ? `${apiError.message} ${apiError.hint}`
+              : apiError.message || 'Something went wrong.',
+          }))
+        }
       } finally {
         setIsStreaming(false)
         abortRef.current = null
@@ -131,7 +134,10 @@ export function useChat() {
     abortRef.current?.abort()
     abortRef.current = null
     setIsStreaming(false)
-  }, [])
+    patchLast((message) =>
+      message.role === 'assistant' ? { ...message, stopped: true } : message,
+    )
+  }, [patchLast])
 
   /**
    * Re-ask the most recent question.
