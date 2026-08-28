@@ -1,22 +1,27 @@
-"""
-RAG retriever - vector search with metadata enrichment.
-"""
-from dataclasses import dataclass
+"""RAG retriever - vector search over transcript chunks."""
+import logging
+from dataclasses import dataclass, field
 from typing import List, Optional
-import chromadb
-from chromadb.config import Settings as ChromaSettings
+
+from starlette.concurrency import run_in_threadpool
+
+from app.config import get_settings
+from app.rag.chroma import VectorStoreUnavailable, get_chroma_client, get_or_create_collection
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class RetrievedChunk:
-    """Retrieved chunk with metadata."""
+    """Retrieved chunk with citation metadata."""
     chunk_id: str
     content: str
     similarity_score: float
     transcript_title: str
     transcript_date: str
-    guests: List[str]
-    chunk_index: int
+    guests: List[str] = field(default_factory=list)
+    chunk_index: int = 0
+    source_url: str = ""
 
 
 class VectorRetriever:
@@ -24,33 +29,47 @@ class VectorRetriever:
 
     def __init__(
         self,
-        chroma_host: str = "localhost",
-        chroma_port: int = 8000,
-        collection_name: str = "lenny_transcripts"
+        collection_name: Optional[str] = None,
+        min_similarity: Optional[float] = None,
     ):
-        self.client = chromadb.HttpClient(
-            host=chroma_host,
-            port=chroma_port,
-            settings=ChromaSettings(anonymized_telemetry=False)
+        settings = get_settings()
+        self.collection_name = collection_name or settings.CHROMA_COLLECTION_NAME
+        self.min_similarity = (
+            settings.MIN_SIMILARITY_SCORE if min_similarity is None else min_similarity
         )
-        self.collection_name = collection_name
         self.collection = None
 
-    async def initialize(self):
-        """Initialize ChromaDB collection."""
+    async def initialize(self) -> None:
+        """
+        Bind to the ChromaDB collection.
+
+        A missing collection means nothing has been ingested yet, which is a
+        recoverable empty-index state. An unreachable ChromaDB is an
+        infrastructure failure and must not be silently reported as "no
+        results" - that used to make an outage look like an ungrounded answer.
+        """
         try:
-            self.collection = self.client.get_collection(
-                name=self.collection_name
+            client = get_chroma_client()
+            self.collection = await run_in_threadpool(
+                get_or_create_collection, client, self.collection_name
             )
-        except Exception:
-            # Collection doesn't exist yet - will be created during ingestion
-            self.collection = None
+        except Exception as exc:  # noqa: BLE001 - surfaced as a typed error below
+            logger.error("ChromaDB unreachable: %s", exc)
+            raise VectorStoreUnavailable(
+                "Vector store is unavailable, so answers cannot be grounded in transcripts"
+            ) from exc
+
+    async def count(self) -> int:
+        """Number of indexed chunks."""
+        if self.collection is None:
+            await self.initialize()
+        return await run_in_threadpool(self.collection.count)
 
     async def retrieve(
         self,
         query_embedding: List[float],
         top_k: int = 10,
-        filters: Optional[dict] = None
+        filters: Optional[dict] = None,
     ) -> List[RetrievedChunk]:
         """
         Retrieve relevant chunks via vector search.
@@ -58,43 +77,56 @@ class VectorRetriever:
         Args:
             query_embedding: Query vector embedding
             top_k: Number of chunks to retrieve
-            filters: Optional metadata filters
+            filters: Optional ChromaDB metadata filter
 
         Returns:
-            List of RetrievedChunk objects
+            Chunks above the similarity floor, best first
         """
-        if not self.collection:
+        if self.collection is None:
             await self.initialize()
 
-        if not self.collection:
-            return []  # No chunks indexed yet
+        if await self.count() == 0:
+            logger.warning("Vector store is empty - has ingestion been run?")
+            return []
 
-        # Query ChromaDB
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=filters
+        results = await run_in_threadpool(
+            lambda: self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=filters,
+            )
         )
 
-        # Convert to RetrievedChunk objects
+        ids = (results.get("ids") or [[]])[0]
+        if not ids:
+            return []
+
+        documents = results["documents"][0]
+        metadatas = results["metadatas"][0]
+        distances = results["distances"][0]
+
         chunks = []
-        if results and results['ids']:
-            for i, chunk_id in enumerate(results['ids'][0]):
-                metadata = results['metadatas'][0][i]
-                content = results['documents'][0][i]
-                distance = results['distances'][0][i]
+        for chunk_id, content, metadata, distance in zip(ids, documents, metadatas, distances):
+            metadata = metadata or {}
+            # Collections are created with hnsw:space=cosine, so distance is in
+            # 0..2 and similarity is its complement.
+            similarity = 1.0 - float(distance)
+            if similarity < self.min_similarity:
+                continue
 
-                # Convert distance to similarity (cosine distance to similarity)
-                similarity_score = 1 - distance
+            guests = [g.strip() for g in str(metadata.get("guests", "")).split(",") if g.strip()]
 
-                chunks.append(RetrievedChunk(
+            chunks.append(
+                RetrievedChunk(
                     chunk_id=chunk_id,
                     content=content,
-                    similarity_score=similarity_score,
-                    transcript_title=metadata.get('transcript_title', 'Unknown'),
-                    transcript_date=metadata.get('transcript_date', ''),
-                    guests=metadata.get('guests', []),
-                    chunk_index=metadata.get('chunk_index', 0)
-                ))
+                    similarity_score=round(max(0.0, min(1.0, similarity)), 4),
+                    transcript_title=metadata.get("transcript_title", "Unknown"),
+                    transcript_date=metadata.get("transcript_date", ""),
+                    guests=guests,
+                    chunk_index=int(metadata.get("chunk_index", 0)),
+                    source_url=metadata.get("source_url", ""),
+                )
+            )
 
         return chunks

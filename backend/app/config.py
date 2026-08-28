@@ -2,8 +2,10 @@
 Application configuration using Pydantic Settings.
 Loads from environment variables with validation.
 """
-from pydantic_settings import BaseSettings
+from functools import lru_cache
 from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -14,17 +16,17 @@ class Settings(BaseSettings):
 
     # LLM Providers
     ANTHROPIC_API_KEY: Optional[str] = None
+    ANTHROPIC_MODEL: str = "claude-sonnet-5"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
     OLLAMA_CHAT_MODEL: str = "llama3.1:8b"
+    OLLAMA_TIMEOUT_SECONDS: int = 180
     DEFAULT_MODEL: str = "ollama"
 
     # ChromaDB
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8000
     CHROMA_COLLECTION_NAME: str = "lenny_transcripts"
-    CHROMADB_HOST: str = "chromadb"
-    CHROMADB_PORT: int = 8000
 
     # Application
     ENVIRONMENT: str = "development"
@@ -37,16 +39,28 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP_TOKENS: int = 200
     RETRIEVAL_TOP_K: int = 10
     CONTEXT_MAX_TOKENS: int = 4000
+    MIN_SIMILARITY_SCORE: float = 0.25
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # Ingestion. Default to a subset so a first run finishes in minutes;
+    # set to 0 to ingest the full catalogue.
+    INGEST_LIMIT: int = 15
+    EMBEDDING_BATCH_SIZE: int = 16
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
 
-# Global settings instance
-settings = Settings()
-
-
+@lru_cache
 def get_settings() -> Settings:
-    """Get settings instance for dependency injection."""
-    return settings
+    """Get cached settings instance for dependency injection."""
+    return Settings()
+
+
+settings = get_settings()

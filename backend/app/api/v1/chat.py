@@ -12,6 +12,7 @@ from app.config import settings
 from app.llm.factory import LLMProviderFactory
 from app.rag.retriever import VectorRetriever
 from app.rag.context_assembler import ContextAssembler
+from app.services.embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -66,21 +67,10 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps({'type': 'retrieval_start'})}\n\n"
 
             # Initialize retriever
-            retriever = VectorRetriever(
-                chroma_host=settings.CHROMA_HOST,
-                chroma_port=settings.CHROMA_PORT,
-                collection_name=settings.CHROMA_COLLECTION_NAME
-            )
+            retriever = VectorRetriever()
             await retriever.initialize()
 
-            # Generate query embedding (using Ollama for embeddings)
-            embedding_provider = LLMProviderFactory.create_provider("ollama", {
-                "base_url": settings.OLLAMA_BASE_URL,
-                "model": settings.OLLAMA_EMBEDDING_MODEL
-            })
-
             # Generate query embedding
-            from app.services.embedding_service import EmbeddingService
             embedding_service = EmbeddingService()
             query_embedding = await embedding_service.generate_embedding(request.message)
             await embedding_service.close()
@@ -150,15 +140,10 @@ async def chat(request: ChatRequest):
     Non-streaming chat endpoint.
     """
     # Initialize retriever
-    retriever = VectorRetriever(
-        chroma_host=settings.CHROMA_HOST,
-        chroma_port=settings.CHROMA_PORT,
-        collection_name=settings.CHROMA_COLLECTION_NAME
-    )
+    retriever = VectorRetriever()
     await retriever.initialize()
 
     # Generate query embedding
-    from app.services.embedding_service import EmbeddingService
     embedding_service = EmbeddingService()
     query_embedding = await embedding_service.generate_embedding(request.message)
     await embedding_service.close()

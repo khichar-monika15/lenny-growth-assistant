@@ -63,3 +63,6 @@ chroma_data/
 agent_transcripts/*.txt
 data/transcripts/*.md
 !data/transcripts/.gitkeep
+
+# Assignment brief (not part of the deliverable)
+*.docx

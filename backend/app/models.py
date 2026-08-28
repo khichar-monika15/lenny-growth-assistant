@@ -1,9 +1,8 @@
 """Database models using SQLAlchemy."""
 from sqlalchemy import Column, String, Integer, Text, Boolean, TIMESTAMP, ForeignKey, ARRAY, Date
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
-from datetime import datetime
 import uuid
 
 Base = declarative_base()

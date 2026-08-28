@@ -32,11 +32,7 @@ async def generate_ship30_essay(request: Ship30Request):
     """
     try:
         # Initialize components
-        retriever = VectorRetriever(
-            chroma_host=settings.CHROMA_HOST,
-            chroma_port=settings.CHROMA_PORT,
-            collection_name=settings.CHROMA_COLLECTION_NAME
-        )
+        retriever = VectorRetriever()
         await retriever.initialize()
 
         context_assembler = ContextAssembler(max_tokens=settings.CONTEXT_MAX_TOKENS)
