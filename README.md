@@ -14,8 +14,12 @@ Runs entirely on your machine. The demo uses Ollama and needs no API key.
 
 ## Quick start
 
-**Prerequisites:** Docker Desktop (with Compose), 8 GB RAM free, 12 GB disk.
-Nothing else. No Python, Node or API key needed.
+**Prerequisites:** Docker Desktop (with Compose), 8 GB RAM, 8 GB disk. Nothing
+else. No Python, Node or API key needed.
+
+On an 8 GB machine, give Docker Desktop at least 6 GB in **Settings →
+Resources**; it defaults lower than people expect and the stack runs five
+containers.
 
 ```bash
 git clone https://github.com/khichar-monika15/lenny-growth-assistant.git
@@ -28,7 +32,7 @@ Then open **http://localhost:3000**.
 `startup.sh` runs unattended and never prompts. It creates `.env` from
 `.env.example`, starts all five services, pulls the two Ollama models, ingests
 transcripts, and prints the URLs. First run takes roughly 10 to 20 minutes,
-almost all of it downloading the 4.7 GB language model.
+almost all of it downloading the 2 GB language model.
 
 Ask something to confirm it works:
 
@@ -49,7 +53,7 @@ SKIP_INGEST=1 ./startup.sh     # start services only
 ```bash
 cp .env.example .env
 docker compose up -d --build
-docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull llama3.2:3b
 docker compose exec ollama ollama pull nomic-embed-text
 docker compose exec backend python -m app.scripts.ingest_transcripts --limit 15
 ```
@@ -133,7 +137,7 @@ stack runs unedited. The ones that matter most:
 |---|---|---|
 | `ANTHROPIC_API_KEY` | *(empty)* | Optional. Empty means local-only; Claude requests fall back to Ollama |
 | `DEFAULT_MODEL` | `ollama` | Provider for requests that do not name one |
-| `OLLAMA_CHAT_MODEL` | `llama3.1:8b` | Any Ollama chat model |
+| `OLLAMA_CHAT_MODEL` | `llama3.2:3b` | Any Ollama chat model |
 | `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` | Changing this requires re-ingesting |
 | `OLLAMA_TIMEOUT_SECONDS` | `180` | Raise on slower hardware |
 | `INGEST_LIMIT` | `15` | Episodes to ingest. `0` means all |
@@ -189,8 +193,8 @@ Errors are structured, never a stack trace:
 ```json
 {
   "error": "model_unavailable",
-  "detail": "Ollama has no model named 'llama3.1:8b'.",
-  "hint": "Pull it with: ollama pull llama3.1:8b"
+  "detail": "Ollama has no model named 'llama3.2:3b'.",
+  "hint": "Pull it with: ollama pull llama3.2:3b"
 }
 ```
 
@@ -252,7 +256,7 @@ docker compose exec backend python -m app.scripts.ingest_transcripts --limit 15
 
 ```bash
 docker compose exec ollama ollama list
-docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull llama3.2:3b
 docker compose exec ollama ollama pull nomic-embed-text
 ```
 

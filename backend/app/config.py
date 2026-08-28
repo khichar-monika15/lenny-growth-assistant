@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL: str = "claude-sonnet-5"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
-    OLLAMA_CHAT_MODEL: str = "llama3.1:8b"
+    OLLAMA_CHAT_MODEL: str = "llama3.2:3b"
     OLLAMA_TIMEOUT_SECONDS: int = 180
     DEFAULT_MODEL: str = "ollama"
 

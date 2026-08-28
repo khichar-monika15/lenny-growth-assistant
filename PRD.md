@@ -69,7 +69,7 @@ curl -s -X POST localhost:8080/api/v1/chat \
 |---|---|---|
 | Honest refusal | 100% of out-of-corpus questions decline rather than improvise | Ask about something no episode covers |
 | Time to first grounded answer, from clone | Under 20 minutes unattended | `./startup.sh` on a clean machine |
-| Response latency, local | Under 30 s end to end for a chat answer | Observed on an 8B model, CPU |
+| Response latency, local | Under 30 s end to end for a chat answer | Observed on a 3B model, CPU |
 | Ship 30 length compliance | Within ±12% of target | Reported per generation as `within_tolerance` |
 | Artifact safety | 100% of scripting and network payloads inert | Automated sanitisation tests |
 
@@ -86,7 +86,7 @@ was decided rather than discovered.
 |---|---|---|
 | 1 | Internal, trusted, single-tenant team tool | Auth and per-user isolation become required |
 | 2 | The 50 free transcripts are a fair proxy for the full corpus | Ingestion already scales; only runtime changes |
-| 3 | Evaluators run on a laptop, not a GPU box | An 8B model is the ceiling; larger models are a config change |
+| 3 | Evaluators run on a laptop, not a GPU box | An 3B model is the ceiling; larger models are a config change |
 | 4 | Grounded and cited beats comprehensive | The similarity floor would be lowered to trade precision for recall |
 | 5 | ~1,250 words is the Ship 30 default the brief wants, though classic atomic essays are ~250 | Range is configurable 250 to 1,250 |
 | 6 | Transcripts change rarely | Hash-based refresh suffices; no webhook or scheduler needed |
@@ -128,9 +128,9 @@ was decided rather than discovered.
 
 | Risk | Severity | Mitigation | Residual |
 |---|---|---|---|
-| **Hallucination** — the model answers from its own memory and it looks identical to a grounded answer | **High** | Similarity floor discards weak matches; the prompt forbids outside knowledge and instructs refusal; sources are always shown so an uncited answer is visibly uncited | An 8B model can still paraphrase loosely. Citations let a reader check |
+| **Hallucination** — the model answers from its own memory and it looks identical to a grounded answer | **High** | Similarity floor discards weak matches; the prompt forbids outside knowledge and instructs refusal; sources are always shown so an uncited answer is visibly uncited | An 3B model can still paraphrase loosely. Citations let a reader check |
 | **Silent retrieval failure** — the worst version of the above, where infrastructure is broken and the product still answers confidently | **High** | An unreachable vector store now raises rather than returning "no results"; `/health/retrieval` reports the indexed count; the UI shows a retrieval error on the message | This actually happened during development. It is the reason grounding rate is the primary metric |
-| **Local model quality** — an 8B model reasons less well than a frontier model | Medium | Grounding does most of the work: the model summarises retrieved text rather than reasoning from scratch. Claude toggle available | Answers are shorter and less nuanced locally. An accepted trade for a zero-key demo |
+| **Local model quality** — a 3B model reasons less well than a frontier model | Medium | Grounding does most of the work: the model summarises retrieved text rather than reasoning from scratch. Claude toggle available | Answers are shorter and less nuanced locally. An accepted trade for a zero-key demo |
 | **Latency** — local generation is slow | Medium | Streaming shows tokens immediately; retrieval is off the event loop; bounded embedding concurrency | 10 to 30 s for a full local answer. First request also pays model load |
 | **Unsafe artifact rendering** — generated HTML is untrusted | Medium | Three independent layers: DOMPurify, an empty iframe sandbox, and a CSP blocking all network. Tested against concrete payloads | Layers 2 and 3 hold even if 1 is bypassed |
 | **Prompt injection from transcripts** | Low | Retrieved text is delimited and labelled as source material; the sandbox means the worst case is misleading text, not execution | Bounded, not solved |

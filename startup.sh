@@ -58,7 +58,7 @@ set -a; . ./.env; set +a
 
 INGEST_LIMIT="${INGEST_LIMIT:-15}"
 SKIP_INGEST="${SKIP_INGEST:-0}"
-CHAT_MODEL="${OLLAMA_CHAT_MODEL:-llama3.1:8b}"
+CHAT_MODEL="${OLLAMA_CHAT_MODEL:-llama3.2:3b}"
 EMBED_MODEL="${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
 
 # --- Services ---------------------------------------------------------------

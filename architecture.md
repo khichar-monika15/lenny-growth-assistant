@@ -30,7 +30,7 @@ transcript repository.
          │               │               │
 ┌────────▼──────┐ ┌──────▼──────┐ ┌──────▼─────────────────┐
 │ PostgreSQL 16 │ │  ChromaDB   │ │ Ollama        :11434   │
-│        :5432  │ │      :8000  │ │ llama3.1:8b            │
+│        :5432  │ │      :8000  │ │ llama3.2:3b            │
 │ sessions      │ │ 768-dim     │ │ nomic-embed-text       │
 │ messages      │ │ cosine HNSW │ └────────────────────────┘
 │ transcripts   │ │             │              or

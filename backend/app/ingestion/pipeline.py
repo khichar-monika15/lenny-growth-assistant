@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from starlette.concurrency import run_in_threadpool
 
 from app.config import get_settings
@@ -121,7 +121,22 @@ async def _ingest_one(
     ).scalar_one_or_none()
 
     if existing and existing.content_hash == content_hash:
-        return None
+        # An unchanged hash is not sufficient to skip: the vector store can be
+        # rebuilt or lost independently of PostgreSQL, and skipping on hash
+        # alone would leave the index permanently empty with no way to recover
+        # short of deleting rows by hand.
+        expected = await _postgres_chunk_count(session, existing.id)
+        indexed = await _vector_chunk_count(collection, str(existing.id))
+
+        if expected > 0 and indexed == expected:
+            return None
+
+        logger.warning(
+            "Reindexing %s: vector store has %d of %d expected chunks",
+            title if (title := entry.get("title")) else github_path,
+            indexed,
+            expected,
+        )
 
     title = entry.get("title", "Untitled")
     publication_date = _parse_date(entry.get("date"))
@@ -213,6 +228,26 @@ async def _ingest_one(
 
     await session.commit()
     return len(chunks)
+
+
+async def _postgres_chunk_count(session, transcript_id) -> int:
+    """How many chunks PostgreSQL believes this transcript has."""
+    result = await session.execute(
+        select(func.count()).select_from(Chunk).where(Chunk.transcript_id == transcript_id)
+    )
+    return int(result.scalar_one())
+
+
+async def _vector_chunk_count(collection, transcript_id: str) -> int:
+    """How many of them are actually present in the vector store."""
+    try:
+        found = await run_in_threadpool(
+            collection.get, where={"transcript_id": transcript_id}, include=[]
+        )
+        return len(found.get("ids", []))
+    except Exception:  # noqa: BLE001 - treat an unreadable index as empty and reindex
+        logger.warning("Could not read vector store for %s", transcript_id, exc_info=True)
+        return 0
 
 
 async def _drop_existing_chunks(session, collection, transcript_id) -> None:

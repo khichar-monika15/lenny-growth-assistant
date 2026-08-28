@@ -314,7 +314,7 @@ Stated plainly so they are not mistaken for bugs.
 - **First response after startup is slow.** The model loads into memory on first
   use. Ten to thirty seconds is normal on CPU.
 - **Local answers are shorter and less nuanced than Claude's.** Expected for an
-  8B model. Grounding carries most of the quality.
+  3B model. Grounding carries most of the quality.
 - **Routing keys off explicit phrasing.** "Write an essay about X" routes to
   Ship 30; "help me think through X in a shareable way" does not. Use the
   `skill` parameter to force it.
