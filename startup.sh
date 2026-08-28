@@ -1,155 +1,169 @@
-#!/bin/bash
-# startup.sh - One-command initialization for The Lenny Growth Assistant
+#!/usr/bin/env bash
+#
+# One-command startup for The Lenny Growth Assistant.
+#
+# Brings up the stack, pulls the local models, ingests transcripts and leaves
+# a working, grounded assistant on http://localhost:3000.
+#
+# Runs unattended: every wait is bounded and nothing prompts for input, so it
+# is safe in CI or over SSH.
+#
+#   ./startup.sh              # ingest INGEST_LIMIT transcripts (default 15)
+#   INGEST_LIMIT=0 ./startup.sh   # ingest the full catalogue
+#   SKIP_INGEST=1 ./startup.sh    # start services only
 
-set -e  # Exit on error
+set -Eeuo pipefail
 
-echo "🚀 Starting The Lenny Growth Assistant..."
-echo ""
+readonly OLLAMA_WAIT_SECONDS=180
+readonly BACKEND_WAIT_SECONDS=240
 
-# Check prerequisites
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker is not installed. Please install Docker Desktop first."
-    echo "   Download from: https://www.docker.com/products/docker-desktop"
-    exit 1
-fi
+log()  { printf '\n\033[1;34m==>\033[0m %s\n' "$1"; }
+ok()   { printf '    \033[0;32mok\033[0m %s\n' "$1"; }
+warn() { printf '    \033[0;33m!\033[0m  %s\n' "$1"; }
+die()  { printf '\n\033[0;31mERROR\033[0m %s\n\n' "$1" >&2; exit 1; }
 
-if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-    echo "❌ Docker Compose is not installed."
-    exit 1
-fi
+trap 'die "Startup failed on line $LINENO. Inspect logs with: $DC logs"' ERR
 
-# Determine docker-compose command
-if command -v docker-compose &> /dev/null; then
-    DC="docker-compose"
+# --- Prerequisites ----------------------------------------------------------
+
+command -v docker >/dev/null 2>&1 \
+  || die "Docker is not installed. Get Docker Desktop: https://www.docker.com/products/docker-desktop"
+
+docker info >/dev/null 2>&1 \
+  || die "Docker is installed but not running. Start Docker Desktop and retry."
+
+if docker compose version >/dev/null 2>&1; then
+  DC="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+  DC="docker-compose"
 else
-    DC="docker compose"
+  die "Docker Compose is not available. Install Docker Desktop, which bundles it."
 fi
+readonly DC
 
-# Create .env if it doesn't exist
+cd "$(dirname "$0")"
+
+# --- Configuration ----------------------------------------------------------
+
 if [ ! -f .env ]; then
-    echo "📝 Creating .env from template..."
-    cat > .env << 'EOF'
-# Database
-DATABASE_URL=postgresql+asyncpg://lenny:lenny_dev_password@postgres:5432/lenny
-POSTGRES_DB=lenny
-POSTGRES_USER=lenny
-POSTGRES_PASSWORD=lenny_dev_password
-
-# LLM Configuration
-ANTHROPIC_API_KEY=
-OLLAMA_BASE_URL=http://ollama:11434
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-OLLAMA_CHAT_MODEL=llama3.1:8b
-DEFAULT_MODEL=ollama
-
-# Application
-ENVIRONMENT=development
-LOG_LEVEL=info
-CORS_ORIGINS=http://localhost:3000,http://localhost:5173
-AUTO_INGEST=false
-TRANSCRIPTS_PATH=/app/data/transcripts
-
-# Frontend
-VITE_API_URL=http://localhost:8080
-VITE_WS_URL=ws://localhost:8080
-
-# ChromaDB
-CHROMA_HOST=chromadb
-CHROMA_PORT=8000
-CHROMA_COLLECTION_NAME=lenny_transcripts
-EOF
-
-    echo "✅ .env created"
-    echo ""
-    echo "⚠️  To use Anthropic Claude (optional), edit .env and add ANTHROPIC_API_KEY"
-    echo "   For demo purposes, Ollama (local) works out of the box."
-    echo ""
-    read -p "Press Enter to continue with local-only setup, or Ctrl+C to exit and configure..."
+  [ -f .env.example ] || die ".env.example is missing; cannot create .env."
+  cp .env.example .env
+  log "Created .env from .env.example"
+  ok "Local defaults applied. Ollama works with no further setup."
+  ok "To use Claude instead, add ANTHROPIC_API_KEY to .env and rerun."
 fi
 
-# Create data directory for transcripts
-mkdir -p data/transcripts
+# shellcheck disable=SC1091
+set -a; . ./.env; set +a
 
-echo "🐳 Starting Docker services..."
-$DC up -d
+INGEST_LIMIT="${INGEST_LIMIT:-15}"
+SKIP_INGEST="${SKIP_INGEST:-0}"
+CHAT_MODEL="${OLLAMA_CHAT_MODEL:-llama3.1:8b}"
+EMBED_MODEL="${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
 
-echo ""
-echo "⏳ Waiting for services to be ready..."
+# --- Services ---------------------------------------------------------------
 
-# Wait for Ollama to be healthy
-echo "   Waiting for Ollama..."
-until $DC exec -T ollama curl -f http://localhost:11434/api/tags &> /dev/null; do
-    echo "   Still waiting for Ollama..."
-    sleep 5
-done
+log "Starting Docker services"
+$DC up -d --build
+ok "postgres, chromadb, ollama, backend, frontend"
 
-echo "✅ Ollama is ready!"
-echo ""
-
-# Pull Ollama models
-echo "📦 Pulling Ollama models (this may take a few minutes)..."
-echo "   Pulling llama3.1:8b..."
-$DC exec -T ollama ollama pull llama3.1:8b || echo "⚠️  Model pull may continue in background"
-
-echo "   Pulling nomic-embed-text..."
-$DC exec -T ollama ollama pull nomic-embed-text || echo "⚠️  Model pull may continue in background"
-
-echo "✅ Models pulled!"
-echo ""
-
-# Wait for backend to be healthy
-echo "⏳ Waiting for backend to be ready..."
-max_attempts=30
-attempt=0
-
-until curl -f http://localhost:8080/health &> /dev/null; do
-    attempt=$((attempt + 1))
-    if [ $attempt -ge $max_attempts ]; then
-        echo "❌ Backend failed to start. Check logs with: $DC logs backend"
-        exit 1
+wait_for() {
+  local label="$1" deadline="$2" probe="$3" elapsed=0
+  printf '    waiting for %s' "$label"
+  until eval "$probe" >/dev/null 2>&1; do
+    if [ "$elapsed" -ge "$deadline" ]; then
+      printf '\n'
+      die "$label did not become ready within ${deadline}s. Check: $DC logs ${label}"
     fi
-    echo "   Still waiting... (attempt $attempt/$max_attempts)"
-    sleep 5
-done
+    printf '.'
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+  printf '\n'
+  ok "$label ready (${elapsed}s)"
+}
 
-echo "✅ Backend is ready!"
-echo ""
+log "Waiting for services"
+wait_for ollama "$OLLAMA_WAIT_SECONDS" "$DC exec -T ollama ollama list"
+wait_for backend "$BACKEND_WAIT_SECONDS" "curl -fsS http://localhost:8080/health"
 
-# Check if transcripts need ingestion
-transcript_count=$(ls -1 data/transcripts/*.md 2>/dev/null | wc -l | tr -d ' ')
+# --- Models -----------------------------------------------------------------
 
-if [ "$transcript_count" -eq "0" ]; then
-    echo "⚠️  No transcripts found in data/transcripts/"
-    echo "   To ingest transcripts:"
-    echo "   1. Clone https://github.com/LennysNewsletter/lennys-newsletterpodcastdata"
-    echo "   2. Copy .md files to data/transcripts/"
-    echo "   3. Run: $DC exec backend python -m app.scripts.ingest_transcripts"
-    echo ""
+pull_model() {
+  local model="$1"
+  if $DC exec -T ollama ollama list 2>/dev/null | grep -q "^${model%%:*}"; then
+    ok "$model already present"
+  else
+    printf '    pulling %s (several GB on first run, this takes a while)\n' "$model"
+    $DC exec -T ollama ollama pull "$model" >/dev/null \
+      || die "Failed to pull $model. Check connectivity and retry."
+    ok "$model pulled"
+  fi
+}
+
+log "Preparing local models"
+pull_model "$CHAT_MODEL"
+pull_model "$EMBED_MODEL"
+
+# --- Knowledge base ---------------------------------------------------------
+#
+# Transcripts are fetched over HTTP from the public Lenny's Podcast repository
+# by the ingestion pipeline. Nothing needs to be cloned or copied by hand.
+
+if [ "$SKIP_INGEST" = "1" ]; then
+  log "Skipping ingestion (SKIP_INGEST=1)"
+  warn "The assistant cannot ground answers until transcripts are ingested."
 else
-    echo "📚 Found $transcript_count transcript files"
-    echo "   Starting ingestion (this will take 10-15 minutes)..."
-    $DC exec -T backend python -m app.scripts.ingest_transcripts || echo "⚠️  Ingestion failed, check logs"
-    echo "✅ Ingestion complete!"
-    echo ""
+  indexed=$(curl -fsS http://localhost:8080/health/retrieval 2>/dev/null \
+    | sed -n 's/.*"indexed_chunks":[[:space:]]*\([0-9]*\).*/\1/p')
+  indexed="${indexed:-0}"
+
+  if [ "$indexed" -gt 0 ]; then
+    log "Knowledge base already populated"
+    ok "$indexed chunks indexed. Re-run ingestion any time with:"
+    ok "  $DC exec backend python -m app.scripts.ingest_transcripts --all"
+  else
+    if [ "$INGEST_LIMIT" = "0" ]; then
+      log "Ingesting the full transcript catalogue (this takes a while)"
+      ingest_args="--all"
+    else
+      log "Ingesting $INGEST_LIMIT transcripts"
+      ingest_args="--limit $INGEST_LIMIT"
+    fi
+
+    # shellcheck disable=SC2086
+    $DC exec -T backend python -m app.scripts.ingest_transcripts $ingest_args \
+      || die "Ingestion failed. Inspect with: $DC logs backend"
+
+    indexed=$(curl -fsS http://localhost:8080/health/retrieval 2>/dev/null \
+      | sed -n 's/.*"indexed_chunks":[[:space:]]*\([0-9]*\).*/\1/p')
+    ok "${indexed:-0} chunks indexed"
+  fi
 fi
 
-echo ""
-echo "✨ The Lenny Growth Assistant is running!"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📱 Frontend:     http://localhost:3000"
-echo "🔧 Backend API:  http://localhost:8080"
-echo "📊 API Docs:     http://localhost:8080/docs"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "🎯 Next Steps:"
-echo "   1. Open http://localhost:3000 in your browser"
-echo "   2. Ask a question: 'What did Lenny say about product-market fit?'"
-echo "   3. Generate a Ship 30 essay: Click 'Generate Ship 30' button"
-echo ""
-echo "📋 Useful Commands:"
-echo "   🛑 Stop:         $DC down"
-echo "   🗑️  Reset data:   $DC down -v"
-echo "   📜 View logs:    $DC logs -f backend"
-echo "   🔄 Restart:      $DC restart backend"
-echo ""
+# --- Done -------------------------------------------------------------------
+
+cat <<BANNER
+
+  The Lenny Growth Assistant is running.
+
+  ────────────────────────────────────────────
+   App        http://localhost:3000
+   API        http://localhost:8080
+   API docs   http://localhost:8080/docs
+   Health     http://localhost:8080/health/retrieval
+  ────────────────────────────────────────────
+
+  Try asking:
+    "What does Jen Abel say about closing enterprise deals?"
+    "Write a Ship 30 essay about talent density"
+    "Create a markdown checklist for a first sales call"
+
+  Useful commands:
+    Stop            $DC down
+    Reset all data  $DC down -v
+    Backend logs    $DC logs -f backend
+    Run tests       $DC exec backend python -m pytest
+    Ingest all      $DC exec backend python -m app.scripts.ingest_transcripts --all
+
+BANNER

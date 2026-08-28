@@ -60,9 +60,8 @@ chroma_data/
 *.log
 
 # Project specific
-agent_transcripts/*.txt
-data/transcripts/*.md
-!data/transcripts/.gitkeep
+# Note: agent_transcripts/ is a required deliverable and IS committed.
+# Transcripts are fetched over HTTP at ingestion time, so nothing is stored here.
 
 # Assignment brief (not part of the deliverable)
 *.docx

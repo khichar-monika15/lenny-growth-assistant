@@ -4,7 +4,7 @@ A full-stack AI-powered RAG application that answers product and growth question
 
 **Built for:** Oogway Labs Forward Deployed Engineer Take-Home Assignment  
 **Author:** Monika Kumari ([khichar-monika15](https://github.com/khichar-monika15))  
-**Demo:** [YouTube Link - TBD]
+**Demo video:** [Watch the walkthrough](https://drive.google.com/drive/folders/1nEUu2DIuA-pRUdbAcvgDioIW5y804f_m?usp=sharing)
 
 ## Features
 

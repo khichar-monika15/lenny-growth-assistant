@@ -1,7 +1,9 @@
+# Image tags are pinned so a clone reproduces the stack that was tested.
+# ':latest' previously meant the evaluator could get a different ChromaDB or
+# Ollama build than the one this was verified against.
 services:
-  # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.2-alpine
     container_name: lenny-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-lenny}
@@ -9,20 +11,19 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lenny_dev_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
+      - ./backend/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lenny}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lenny} -d ${POSTGRES_DB:-lenny}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - lenny-network
+    networks: [lenny-network]
+    restart: unless-stopped
 
-  # ChromaDB Vector Database
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:1.5.9
     container_name: lenny-chromadb
     volumes:
       - chroma_data:/chroma/chroma
@@ -31,88 +32,89 @@ services:
       PERSIST_DIRECTORY: /chroma/chroma
       ANONYMIZED_TELEMETRY: "FALSE"
     ports:
-      - "8000:8000"
+      - "${CHROMA_PORT:-8000}:8000"
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1\")' || exit 1"]
+      # v2. The v1 API this used to probe was removed and returns 404, so the
+      # container reported unhealthy even while serving correctly.
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat', timeout=3).status==200 else 1)\""
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
-    networks:
-      - lenny-network
+      start_period: 20s
+    networks: [lenny-network]
+    restart: unless-stopped
 
-  # Ollama Local LLM
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.5.7
     container_name: lenny-ollama
     volumes:
       - ollama_data:/root/.ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT:-11434}:11434"
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
+      # The image has no curl; ollama's own CLI is the reliable probe.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 60s
-    networks:
-      - lenny-network
+      retries: 10
+      start_period: 30s
+    networks: [lenny-network]
+    restart: unless-stopped
 
-  # FastAPI Backend
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: lenny-backend
     environment:
-      # Database
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-lenny}:${POSTGRES_PASSWORD:-lenny_dev_password}@postgres:5432/${POSTGRES_DB:-lenny}
 
-      # ChromaDB
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
       CHROMA_COLLECTION_NAME: ${CHROMA_COLLECTION_NAME:-lenny_transcripts}
 
-      # LLM Configuration
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.1:8b}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-180}
       DEFAULT_MODEL: ${DEFAULT_MODEL:-ollama}
 
-      # App Config
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
 
-      # Transcript ingestion
-      TRANSCRIPTS_PATH: /app/data/transcripts
-      AUTO_INGEST: ${AUTO_INGEST:-false}
+      INGEST_LIMIT: ${INGEST_LIMIT:-15}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-16}
+      RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K:-10}
+      CONTEXT_MAX_TOKENS: ${CONTEXT_MAX_TOKENS:-4000}
+      MIN_SIMILARITY_SCORE: ${MIN_SIMILARITY_SCORE:-0.25}
     volumes:
+      # Live reload during development. Remove for an immutable deployment.
       - ./backend:/app
-      - ./data/transcripts:/app/data/transcripts:ro
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
       chromadb:
-        condition: service_started
+        condition: service_healthy
       ollama:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    networks:
-      - lenny-network
+      start_period: 20s
+    networks: [lenny-network]
     restart: unless-stopped
 
-  # React Frontend (Development)
   frontend:
     build:
       context: ./frontend
@@ -120,28 +122,21 @@ services:
     container_name: lenny-frontend
     environment:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
-      VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8080}
     volumes:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy
-    networks:
-      - lenny-network
-    stdin_open: true
-    tty: true
+    networks: [lenny-network]
     restart: unless-stopped
 
 volumes:
   postgres_data:
-    driver: local
   chroma_data:
-    driver: local
   ollama_data:
-    driver: local
 
 networks:
   lenny-network:
