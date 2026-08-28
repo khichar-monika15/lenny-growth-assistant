@@ -78,9 +78,10 @@ async def root():
 
 
 # Mount API routers
-from app.api.v1 import chat
+from app.api.v1 import chat, health
 
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+app.include_router(health.router, tags=["health"])
 
 
 if __name__ == "__main__":
