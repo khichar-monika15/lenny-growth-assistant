@@ -77,12 +77,10 @@ async def root():
     }
 
 
-# TODO: Mount API routers
-# from app.api.v1 import sessions, messages, ship30, admin
-# app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
-# app.include_router(messages.router, prefix="/api/v1", tags=["messages"])
-# app.include_router(ship30.router, prefix="/api/v1", tags=["ship30"])
-# app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+# Mount API routers
+from app.api.v1 import chat
+
+app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 
 
 if __name__ == "__main__":
