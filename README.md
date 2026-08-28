@@ -129,7 +129,7 @@ SSE Stream → React Frontend
 Display: Chat + Sources + Artifact Viewer
 ```
 
-See [architecture.md](docs/architecture.md) for detailed architecture documentation.
+See [architecture.md](architecture.md) for detailed architecture documentation.
 
 ## Development
 
@@ -226,10 +226,10 @@ docker-compose restart chromadb
 
 ## Documentation
 
-- [PRD.md](docs/PRD.md) - Product Requirements Document
-- [architecture.md](docs/architecture.md) - Technical Architecture
-- [design.md](docs/design.md) - UI/UX Design Decisions
-- [TESTING.md](docs/TESTING.md) - Manual Test Plan
+- [PRD.md](PRD.md) - Product Requirements Document
+- [architecture.md](architecture.md) - Technical Architecture
+- [design.md](design.md) - UI/UX Design Decisions
+- [TESTING.md](TESTING.md) - Manual Test Plan
 
 ## Project Structure
 
