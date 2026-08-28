@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8000
     CHROMA_COLLECTION_NAME: str = "lenny_transcripts"
+    CHROMADB_HOST: str = "chromadb"
+    CHROMADB_PORT: int = 8000
 
     # Application
     ENVIRONMENT: str = "development"
@@ -36,10 +38,6 @@ class Settings(BaseSettings):
     RETRIEVAL_TOP_K: int = 10
     CONTEXT_MAX_TOKENS: int = 4000
 
-    # Ingestion
-    CHROMADB_HOST: str = "chromadb"
-    CHROMADB_PORT: int = 8000
-
     class Config:
         env_file = ".env"
         case_sensitive = True
@@ -47,3 +45,8 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Get settings instance for dependency injection."""
+    return settings
