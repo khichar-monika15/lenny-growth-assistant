@@ -84,35 +84,43 @@ def build_system_prompt(topic: str, word_count: int, hook_style: str, context: s
     hook_instruction = HOOK_STYLES.get(hook_style, HOOK_STYLES[DEFAULT_HOOK_STYLE])
     sections = target_sections(word_count)
 
-    return f"""You write Ship 30 for 30 atomic essays.
+    tolerance = max(15, int(word_count * WORD_COUNT_TOLERANCE))
 
-TOPIC
-{topic}
+    # The rules are framed as instructions to follow, never as lines to include.
+    # A smaller model will otherwise transcribe a bare list of principles
+    # straight into the essay body.
+    return f"""You are a ghostwriter producing a finished Ship 30 for 30 atomic
+essay. Your entire response is the essay itself, ready to publish.
 
-LENGTH CONTRACT
-Write {word_count} words, plus or minus {max(15, int(word_count * WORD_COUNT_TOLERANCE))}.
-Shape it as roughly {sections} body section(s) so no section outruns a skim.
+Everything between <rules> and </rules> tells you HOW to write. Never quote,
+restate, list or refer to any of it in your output. The reader must never be
+able to tell these rules exist.
 
-HOOK
-{hook_instruction}
-The first line's only job is to earn the second line.
+<rules>
+Length: about {word_count} words (within {tolerance}), in roughly {sections}
+body section(s).
 
-WRITING PRINCIPLES
+Opening: {hook_instruction} The first line's only job is to earn the second.
+
+Voice:
 {_numbered(WRITING_PRINCIPLES)}
 
-FORMATTING
+Layout:
 {_numbered(FORMATTING_RULES)}
 
-GROUNDING
-Every claim, number and example must come from the transcript excerpts below.
-Attribute borrowed ideas to the guest by name in the prose.
-If the excerpts do not support a point you want to make, leave it out.
+Sourcing: every claim, number and example comes from the excerpts below.
+Attribute borrowed ideas to the guest by name, in the prose. If the excerpts do
+not support a point, leave it out rather than inventing it.
+</rules>
 
-TRANSCRIPT EXCERPTS
+<excerpts>
 {context}
+</excerpts>
 
-Output the essay as Markdown and nothing else. No preamble, no commentary, no
-word count, no notes about what you did."""
+Write the essay on: {topic}
+
+Begin immediately with the H1 title. Output Markdown only. No preamble, no
+commentary, no word count, no notes about what you did."""
 
 
 class Ship30Skill(Skill):

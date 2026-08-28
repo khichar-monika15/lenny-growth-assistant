@@ -61,7 +61,7 @@ something bigger. "Non-blocking" was a guess, not a finding.
 ### 2. ChromaDB defaulted to L2, so every similarity score was meaningless
 
 The collection was created without `hnsw:space`, so ChromaDB used squared L2
-while `retriever.py` computed `1 - distance` — a formula only valid for cosine.
+while `retriever.py` computed `1 - distance`, a formula only valid for cosine.
 L2 distances are unbounded, so scores could go arbitrarily negative.
 
 Confirmed by asking the running server rather than assuming:

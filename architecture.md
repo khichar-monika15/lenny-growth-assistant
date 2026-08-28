@@ -144,7 +144,7 @@ stored as ISO strings and guests as a comma-joined string.
 | Persistence | `app/services/session_service` | Sessions and messages | models, database |
 | Agent | `app/agent` | Intent routing, skills | rag types only |
 | Retrieval | `app/rag` | Vector search, context assembly | chroma |
-| Models | `app/llm` | Provider abstraction | — |
+| Models | `app/llm` | Provider abstraction | none |
 | Ingestion | `app/ingestion` | Fetch, chunk, embed, index | rag, models, database |
 
 The rules that keep this honest:
@@ -179,7 +179,7 @@ fetch markdown ──▶ SHA-256 ──▶ unchanged? ──yes──▶ skip
     │                              no
     ▼                              ▼
 paragraph-aligned chunking     update in place,
-800–1200 tokens, 200 overlap   delete stale chunks
+800 to 1200 tokens, 200 overlap   delete stale chunks
     │                          from both stores
     ▼
 embed in batches of 16 (nomic-embed-text, bounded concurrency)
@@ -272,8 +272,8 @@ matched" and produced a confident, ungrounded answer. Now:
 ### Why this shape
 
 The brief names the Claude Agent SDK. This implementation uses the Anthropic SDK
-directly behind a provider abstraction, and puts the agent behaviour — skill
-boundaries, routing, grounding — in the application layer.
+directly behind a provider abstraction, and puts the agent behaviour, skill
+boundaries, routing, grounding, in the application layer.
 
 The reason is the demo requirement. Ollama is mandatory for the demo, and the
 Claude Agent SDK is Anthropic-only; adopting it would mean the local demo path
@@ -322,10 +322,10 @@ Each implements `plan(context) → SkillPlan` and optionally
 `finalize(text, context) → SkillResult`.
 
 **Ship 30 as an encoded skill.** The brief asks for the method encoded rather
-than an unstructured prompt. The skill holds the rules as addressable data — a
+than an unstructured prompt. The skill holds the rules as addressable data, a
 hook taxonomy (`question`, `stat`, `story`, `contrarian`), six voice principles,
 five formatting rules, a section count derived from the target length, and a
-tolerance band — and composes the prompt from them. Each rule is testable on its
+tolerance band, and composes the prompt from them. Each rule is testable on its
 own, and the token budget is computed from the word target (~2.2 tokens/word)
 rather than fixed, which is what previously truncated long essays.
 
@@ -385,7 +385,7 @@ at `/docs`.
 | `GET` | `/api/v1/ship30/hook-styles` | 200 | |
 | `GET` | `/health`, `/health/db`, `/health/retrieval`, `/health/llm` | 200 / 503 | |
 
-**Validation.** Message length 1–8000, `word_count` 250–1250, `hook_style`
+**Validation.** Message length 1 to 8000, `word_count` 250 to 1250, `hook_style`
 against the known set, UUIDs coerced by path type. Invalid input is 422 before
 any work happens.
 
@@ -426,7 +426,7 @@ layers so bypassing one is insufficient:
 1. **DOMPurify** strips `<script>`, `<iframe>`, `<form>`, `<input>`, `<link>`,
    `<object>`, `<embed>`, `<base>`, `<meta>`, every `on*` handler, and
    `javascript:` URLs.
-2. **`<iframe sandbox="" srcdoc=...>`** — an empty sandbox grants nothing, so
+2. **`<iframe sandbox="" srcdoc=...>`**, an empty sandbox grants nothing, so
    scripting, forms, popups, pointer lock and top-level navigation are disabled
    and the frame gets an opaque origin with no access to the parent.
 3. **CSP `default-src 'none'`** inside that document blocks every network
@@ -444,7 +444,7 @@ embedded HTML is inert by construction.
 **Elsewhere:** parameterised queries only, through the SQLAlchemy ORM. CORS
 restricted to configured origins. Secrets only from the environment, `.env`
 gitignored, `.env.example` carries no real values. Prompt injection from
-transcript content is bounded rather than solved — retrieved text is delimited
+transcript content is bounded rather than solved, retrieved text is delimited
 and labelled as source material, and the artifact sandbox means the worst case
 is misleading text, not code execution.
 
@@ -470,7 +470,7 @@ warnings and ingestion progress are all logged.
 
 Health is split by dependency so a failure names itself rather than returning
 one opaque "unhealthy". `/health/retrieval` reports the indexed chunk count,
-which is the fastest way to diagnose the most likely failure — a running stack
+which is the fastest way to diagnose the most likely failure, a running stack
 with an empty index.
 
 Dependencies are checked and logged at startup but never block it: the API must

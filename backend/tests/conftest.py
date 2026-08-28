@@ -7,6 +7,7 @@ JSONB round-tripping, the reserved `metadata` column mapping - only exists in
 the real database.
 """
 import asyncio
+import logging
 from typing import AsyncIterator
 
 import pytest
@@ -16,6 +17,10 @@ from sqlalchemy import text
 
 from app.database import AsyncSessionLocal, engine
 from app.main import app
+
+# The pool logs a GC warning per connection at interpreter shutdown, after
+# pytest has closed its capture streams. Harmless, but it buries the summary.
+logging.getLogger("sqlalchemy.pool").setLevel(logging.CRITICAL)
 
 
 def _database_reachable() -> bool:

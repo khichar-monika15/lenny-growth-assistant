@@ -55,7 +55,7 @@ already uses, so no learning cost.
 
 **Three regions, one of which is conditional.**
 
-The **sidebar** holds session history and, at its foot, the index status — the
+The **sidebar** holds session history and, at its foot, the index status, the
 indexed chunk count. That placement is deliberate: the single most likely
 failure an evaluator hits is a running stack with an empty index, and this makes
 it visible without opening a terminal.
@@ -65,7 +65,7 @@ and centred, because a full-width line of prose at 1600px is unreadable.
 
 The **artifact viewer** appears only when a document exists, and takes a fixed
 460px so the conversation never collapses to a sliver. It is a peer of the chat,
-not a modal over it — the brief asks for artifacts *beside* the chat, and a
+not a modal over it, the brief asks for artifacts *beside* the chat, and a
 modal would break the ability to keep talking while reading.
 
 ### Message anatomy
@@ -107,7 +107,7 @@ Every state below is implemented, not aspirational.
 ### Empty
 
 First load shows what the assistant is for and three example prompts covering
-the three skills — a question, an essay, a document. This is the only routing
+the three skills, a question, an essay, a document. This is the only routing
 documentation a user gets, and it is enough: seeing "Write a Ship 30 essay
 about…" teaches the pattern without explaining it.
 
@@ -141,7 +141,7 @@ the backend's `detail` and `hint`:
 > The model took too long to respond. Local models are slow on first load. Retry,
 > or raise `OLLAMA_TIMEOUT_SECONDS`.
 
-Two rules. **The composer always re-enables** — the streaming flag is cleared in
+Two rules. **The composer always re-enables**: the streaming flag is cleared in
 a `finally`, so no failure can strand the UI in a permanently disabled state.
 And **partial output is kept**: if a stream dies halfway, the text so far stays
 on screen with the error beneath it, rather than discarding work the user might
@@ -164,7 +164,7 @@ does nothing is worse than one that explains itself.
 ## 4. The artifact viewer
 
 Two tabs. **Preview** renders; **Source** shows the raw Markdown or HTML in a
-scrollable block. Source is not a debug affordance — a content owner who wants
+scrollable block. Source is not a debug affordance, a content owner who wants
 the Markdown to paste elsewhere needs it, and it is also how a reviewer confirms
 what the sanitiser produced.
 
@@ -194,7 +194,7 @@ permits and blocks.
 | Breakpoint | Layout |
 |---|---|
 | **> 1100px** | Three columns. Sidebar 250px, conversation flexible, artifact 460px |
-| **820 – 1100px** | Sidebar and conversation side by side. The artifact viewer becomes a full-height overlay, since three columns below 1100px leaves the conversation unusably narrow |
+| **820 to 1100px** | Sidebar and conversation side by side. The artifact viewer becomes a full-height overlay, since three columns below 1100px leaves the conversation unusably narrow |
 | **< 820px** | Single column. The sidebar becomes an off-canvas drawer behind a ☰ toggle. The header wraps and the model toggle moves to its own row |
 
 The composer, message list and artifact body each scroll independently, so the
@@ -229,7 +229,7 @@ disclosures expose `aria-expanded` and `aria-selected`.
 
 **Colour and contrast.** Body text `#1f2933` on `#ffffff` is 13.6:1; muted text
 `#6b7684` is 4.7:1; the accent `#2563eb` is 5.9:1. All clear WCAG AA. Provider
-status is never colour alone — the dot is paired with a text label and a
+status is never colour alone, the dot is paired with a text label and a
 tooltip, so red/green colour blindness does not hide it.
 
 **Motion.** `prefers-reduced-motion: reduce` collapses every animation and
@@ -244,7 +244,7 @@ three are unfinished rather than considered done.
 
 ## 7. Visual system
 
-**Type.** The system font stack — no webfont, so no network request, no layout
+**Type.** The system font stack, no webfont, so no network request, no layout
 shift, and text that looks native. 15px base, 1.6 line height for prose. Headings
 step 1.32 / 1.10 / 0.98rem: a small scale, because the content supplies the
 hierarchy.
@@ -310,5 +310,5 @@ components, a store is the right next step.
 
 **Adding a state** means handling it in the `useChat` event switch and rendering
 it in `MessageList`. Every state the assistant can be in is represented on the
-message object — `content`, `sources`, `artifact`, `error` — so there is no
+message object, `content`, `sources`, `artifact`, `error`, so there is no
 separate state machine to keep in sync.

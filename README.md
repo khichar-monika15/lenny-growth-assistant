@@ -321,11 +321,11 @@ unchanged.
 
 ## Documentation
 
-- **[PRD.md](PRD.md)** — user, problem, success metrics, assumptions, scope, risks
-- **[architecture.md](architecture.md)** — schema, endpoints, flows, routing, security, topology
-- **[design.md](design.md)** — UI principles, states, responsive behaviour, accessibility
-- **[TESTING.md](TESTING.md)** — manual test plan
-- **[agent_transcripts/](agent_transcripts/)** — build logs, including what went wrong
+- **[PRD.md](PRD.md)**, user, problem, success metrics, assumptions, scope, risks
+- **[architecture.md](architecture.md)**, schema, endpoints, flows, routing, security, topology
+- **[design.md](design.md)**, UI principles, states, responsive behaviour, accessibility
+- **[TESTING.md](TESTING.md)**, manual test plan
+- **[agent_transcripts/](agent_transcripts/)**, build logs, including what went wrong
 
 ---
 

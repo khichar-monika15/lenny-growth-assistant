@@ -67,6 +67,8 @@ class LLMProviderFactory:
                 base_url=config.get("base_url") or settings.OLLAMA_BASE_URL,
                 model=config.get("model") or settings.OLLAMA_CHAT_MODEL,
                 timeout=config.get("timeout") or settings.OLLAMA_TIMEOUT_SECONDS,
+                context_window=config.get("context_window")
+                or settings.OLLAMA_CONTEXT_WINDOW,
             )
 
         raise ValueError(f"Unknown provider: {provider_name}. Expected one of {SUPPORTED}.")

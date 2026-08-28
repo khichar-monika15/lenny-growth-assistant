@@ -26,10 +26,12 @@ class OllamaProvider(BaseLLMProvider):
         base_url: str = "http://localhost:11434",
         model: str = "llama3.2:3b",
         timeout: int = 180,
+        context_window: int = 8192,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
+        self.context_window = context_window
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout)
         self.encoding = tiktoken.get_encoding("cl100k_base")
 
@@ -53,7 +55,15 @@ class OllamaProvider(BaseLLMProvider):
             "model": self.model,
             "messages": chat_messages,
             "stream": stream,
-            "options": {"temperature": temperature, "num_predict": max_tokens},
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                # Ollama defaults num_ctx to 2048 regardless of what the model
+                # supports. Retrieved context alone is up to 4000 tokens, so
+                # the default silently truncated the transcript excerpts out of
+                # the prompt and the model answered as if it had no sources.
+                "num_ctx": self.context_window,
+            },
         }
 
     async def generate(

@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
     OLLAMA_CHAT_MODEL: str = "llama3.2:3b"
     OLLAMA_TIMEOUT_SECONDS: int = 180
+    # Must exceed CONTEXT_MAX_TOKENS plus instructions and history.
+    # Ollama defaults to 2048, which truncates retrieved context away.
+    OLLAMA_CONTEXT_WINDOW: int = 8192
     DEFAULT_MODEL: str = "ollama"
 
     # ChromaDB

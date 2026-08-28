@@ -9,8 +9,8 @@
 ### The user
 
 A **product manager or growth lead on a 10 to 40 person product team**. They
-have hard, specific questions — how to price a second product line, what to do
-when activation stalls, how to run a first enterprise sales call — and they know
+have hard, specific questions, how to price a second product line, what to do
+when activation stalls, how to run a first enterprise sales call, and they know
 that someone on Lenny's Podcast has answered each one well. They cannot find it.
 
 A secondary user is the **content owner** on the same team, who turns internal
@@ -48,7 +48,7 @@ Three pains removed:
 
 ### Success metrics
 
-**Primary — grounding rate.** *At least 90% of answers to in-corpus questions
+**Primary, grounding rate.** *At least 90% of answers to in-corpus questions
 cite at least one transcript, and every cited passage is genuinely relevant.*
 
 This is the metric because it is the one that failed. During development the
@@ -128,11 +128,11 @@ was decided rather than discovered.
 
 | Risk | Severity | Mitigation | Residual |
 |---|---|---|---|
-| **Hallucination** — the model answers from its own memory and it looks identical to a grounded answer | **High** | Similarity floor discards weak matches; the prompt forbids outside knowledge and instructs refusal; sources are always shown so an uncited answer is visibly uncited | An 3B model can still paraphrase loosely. Citations let a reader check |
-| **Silent retrieval failure** — the worst version of the above, where infrastructure is broken and the product still answers confidently | **High** | An unreachable vector store now raises rather than returning "no results"; `/health/retrieval` reports the indexed count; the UI shows a retrieval error on the message | This actually happened during development. It is the reason grounding rate is the primary metric |
-| **Local model quality** — a 3B model reasons less well than a frontier model | Medium | Grounding does most of the work: the model summarises retrieved text rather than reasoning from scratch. Claude toggle available | Answers are shorter and less nuanced locally. An accepted trade for a zero-key demo |
-| **Latency** — local generation is slow | Medium | Streaming shows tokens immediately; retrieval is off the event loop; bounded embedding concurrency | 10 to 30 s for a full local answer. First request also pays model load |
-| **Unsafe artifact rendering** — generated HTML is untrusted | Medium | Three independent layers: DOMPurify, an empty iframe sandbox, and a CSP blocking all network. Tested against concrete payloads | Layers 2 and 3 hold even if 1 is bypassed |
+| **Hallucination**: the model answers from its own memory and it looks identical to a grounded answer | **High** | Similarity floor discards weak matches; the prompt forbids outside knowledge and instructs refusal; sources are always shown so an uncited answer is visibly uncited | An 3B model can still paraphrase loosely. Citations let a reader check |
+| **Silent retrieval failure**: the worst version of the above, where infrastructure is broken and the product still answers confidently | **High** | An unreachable vector store now raises rather than returning "no results"; `/health/retrieval` reports the indexed count; the UI shows a retrieval error on the message | This actually happened during development. It is the reason grounding rate is the primary metric |
+| **Local model quality**: a 3B model reasons less well than a frontier model | Medium | Grounding does most of the work: the model summarises retrieved text rather than reasoning from scratch. Claude toggle available | Answers are shorter and less nuanced locally. An accepted trade for a zero-key demo |
+| **Latency**: local generation is slow | Medium | Streaming shows tokens immediately; retrieval is off the event loop; bounded embedding concurrency | 10 to 30 s for a full local answer. First request also pays model load |
+| **Unsafe artifact rendering**: generated HTML is untrusted | Medium | Three independent layers: DOMPurify, an empty iframe sandbox, and a CSP blocking all network. Tested against concrete payloads | Layers 2 and 3 hold even if 1 is bypassed |
 | **Prompt injection from transcripts** | Low | Retrieved text is delimited and labelled as source material; the sandbox means the worst case is misleading text, not execution | Bounded, not solved |
 | **Data leakage** | Low | Local-only by default; no key needed. `.env` gitignored, no secrets committed | Selecting Claude sends the question and retrieved excerpts to Anthropic. Public transcripts, so low sensitivity |
 | **Cost** | Low | Local demo is free. Cloud is opt-in and per-request | Bounded by `max_tokens` |
@@ -219,14 +219,14 @@ returned fluent answers.
 **Pass two** was an audit, and it found that the product's central requirement
 did not work. Zero transcripts were indexed. Every answer had been ungrounded.
 The cause was one arithmetic error in the chunker's cursor that made it loop
-forever on any document longer than one chunk — which is every document. It had
+forever on any document longer than one chunk, which is every document. It had
 been dismissed as a memory issue and left alone.
 
 That audit produced 40 findings and reordered the remaining work:
 
-1. **Make retrieval actually work** — chunker, cosine space, metadata contract, refresh
-2. **Sessions, persistence, agent routing** — none of which existed
-3. **Artifact viewer, model toggle, session UI** — core requirements with no implementation
+1. **Make retrieval actually work**: chunker, cosine space, metadata contract, refresh
+2. **Sessions, persistence, agent routing**: none of which existed
+3. **Artifact viewer, model toggle, session UI**: core requirements with no implementation
 4. **Resilience, observability, tests**
 5. **Deliverables, documentation, hygiene**
 

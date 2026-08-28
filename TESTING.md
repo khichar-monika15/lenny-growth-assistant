@@ -251,7 +251,7 @@ docker compose start postgres
 Resize the browser, or use device emulation:
 
 - [ ] **> 1100px** three columns with the artifact open
-- [ ] **820–1100px** the artifact becomes a full-height overlay
+- [ ] **820 to 1100px** the artifact becomes a full-height overlay
 - [ ] **< 820px** single column; ☰ opens the sidebar as a drawer
 - [ ] No horizontal page scrolling at any width
 

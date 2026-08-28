@@ -59,6 +59,15 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
+      # Bound memory on an 8 GB machine.
+      #
+      # NUM_PARALLEL matters most: Ollama allocates num_ctx for EVERY parallel
+      # slot, and defaults to 4. With an 8192 context that reserves 32768
+      # tokens of KV cache and pushed a 2 GB model to 7.8 GB resident. This is
+      # a single-user local tool, so one slot is correct as well as cheaper.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-2m}
     healthcheck:
       # The image has no curl; ollama's own CLI is the reliable probe.
       test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
@@ -87,6 +96,7 @@ services:
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.2:3b}
       OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
       OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-180}
+      OLLAMA_CONTEXT_WINDOW: ${OLLAMA_CONTEXT_WINDOW:-8192}
       DEFAULT_MODEL: ${DEFAULT_MODEL:-ollama}
 
       ENVIRONMENT: ${ENVIRONMENT:-development}
