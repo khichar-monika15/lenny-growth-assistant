@@ -1,13 +1,21 @@
 """
 Ollama local LLM provider.
-Adapts Ollama API to match Claude SDK interface.
+
+Uses Ollama's /api/chat endpoint so the model's own chat template is applied.
+The previous implementation flattened messages into a single "User:/Assistant:"
+string against /api/generate, which bypassed the template and degraded
+instruction following on chat-tuned models like llama3.1.
 """
-from typing import AsyncIterator, List, Dict, Any, Optional
-import httpx
 import json
+import logging
+from typing import Any, AsyncIterator, Dict, List, Optional
+
+import httpx
 import tiktoken
 
-from .base import BaseLLMProvider
+from .base import BaseLLMProvider, LLMError, LLMTimeout, LLMUnavailable
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaProvider(BaseLLMProvider):
@@ -17,15 +25,36 @@ class OllamaProvider(BaseLLMProvider):
         self,
         base_url: str = "http://localhost:11434",
         model: str = "llama3.1:8b",
-        timeout: int = 120
+        timeout: int = 180,
     ):
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/")
         self.model = model
-        self.client = httpx.AsyncClient(
-            base_url=base_url,
-            timeout=timeout
-        )
+        self.timeout = timeout
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout)
         self.encoding = tiktoken.get_encoding("cl100k_base")
+
+    async def aclose(self) -> None:
+        await self.client.aclose()
+
+    def _payload(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: Optional[str],
+        max_tokens: int,
+        temperature: float,
+        stream: bool,
+    ) -> Dict[str, Any]:
+        chat_messages: List[Dict[str, str]] = []
+        if system_prompt:
+            chat_messages.append({"role": "system", "content": system_prompt})
+        chat_messages.extend(messages)
+
+        return {
+            "model": self.model,
+            "messages": chat_messages,
+            "stream": stream,
+            "options": {"temperature": temperature, "num_predict": max_tokens},
+        }
 
     async def generate(
         self,
@@ -33,33 +62,29 @@ class OllamaProvider(BaseLLMProvider):
         system_prompt: Optional[str] = None,
         max_tokens: int = 2048,
         temperature: float = 0.7,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """Non-streaming generation."""
-        prompt = self._construct_prompt(messages, system_prompt)
+        payload = self._payload(messages, system_prompt, max_tokens, temperature, stream=False)
 
-        response = await self.client.post(
-            "/api/generate",
-            json={
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": temperature,
-                    "num_predict": max_tokens
-                }
-            }
-        )
+        try:
+            response = await self.client.post("/api/chat", json=payload)
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise LLMTimeout(f"Ollama timed out after {self.timeout}s") from exc
+        except httpx.HTTPStatusError as exc:
+            raise self._status_error(exc) from exc
+        except httpx.HTTPError as exc:
+            raise LLMUnavailable(f"Cannot reach Ollama at {self.base_url}: {exc}") from exc
 
         data = response.json()
-
         return {
-            "content": data.get("response", ""),
-            "stop_reason": "stop",
+            "content": (data.get("message") or {}).get("content", ""),
+            "stop_reason": data.get("done_reason") or "stop",
             "usage": {
                 "input_tokens": data.get("prompt_eval_count", 0),
-                "output_tokens": data.get("eval_count", 0)
-            }
+                "output_tokens": data.get("eval_count", 0),
+            },
         }
 
     async def stream(
@@ -68,61 +93,57 @@ class OllamaProvider(BaseLLMProvider):
         system_prompt: Optional[str] = None,
         max_tokens: int = 2048,
         temperature: float = 0.7,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Streaming generation."""
-        prompt = self._construct_prompt(messages, system_prompt)
+        payload = self._payload(messages, system_prompt, max_tokens, temperature, stream=True)
 
-        async with self.client.stream(
-            "POST",
-            "/api/generate",
-            json={
-                "model": self.model,
-                "prompt": prompt,
-                "stream": True,
-                "options": {
-                    "temperature": temperature,
-                    "num_predict": max_tokens
-                }
-            }
-        ) as response:
-            async for line in response.aiter_lines():
-                if line:
-                    data = json.loads(line)
+        try:
+            async with self.client.stream("POST", "/api/chat", json=payload) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                    raise self._status_error(
+                        httpx.HTTPStatusError(
+                            "ollama error", request=response.request, response=response
+                        )
+                    )
 
-                    if "response" in data:
-                        yield {
-                            "type": "content_delta",
-                            "delta": data["response"]
-                        }
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        logger.warning("Skipping malformed line from Ollama: %r", line[:200])
+                        continue
+
+                    delta = (data.get("message") or {}).get("content", "")
+                    if delta:
+                        yield {"type": "content_delta", "delta": delta}
 
                     if data.get("done"):
-                        yield {"type": "message_stop"}
+                        yield {
+                            "type": "message_stop",
+                            "usage": {
+                                "input_tokens": data.get("prompt_eval_count", 0),
+                                "output_tokens": data.get("eval_count", 0),
+                            },
+                        }
+
+        except httpx.TimeoutException as exc:
+            raise LLMTimeout(f"Ollama timed out after {self.timeout}s") from exc
+        except httpx.HTTPError as exc:
+            raise LLMUnavailable(f"Cannot reach Ollama at {self.base_url}: {exc}") from exc
+
+    def _status_error(self, exc: httpx.HTTPStatusError) -> LLMError:
+        if exc.response.status_code == 404:
+            return LLMUnavailable(
+                f"Ollama has no model named '{self.model}'. "
+                f"Pull it with: ollama pull {self.model}"
+            )
+        return LLMError(f"Ollama returned HTTP {exc.response.status_code}")
 
     async def count_tokens(self, text: str) -> int:
-        """Approximate token counting."""
+        """Approximate token count. Exact only for OpenAI-family tokenizers."""
         return len(self.encoding.encode(text))
-
-    def _construct_prompt(
-        self,
-        messages: List[Dict[str, str]],
-        system_prompt: Optional[str] = None
-    ) -> str:
-        """Convert Claude-style messages to Ollama prompt format."""
-        parts = []
-
-        if system_prompt:
-            parts.append(f"System: {system_prompt}\n")
-
-        for msg in messages:
-            role = msg["role"]
-            content = msg["content"]
-
-            if role == "user":
-                parts.append(f"User: {content}\n")
-            elif role == "assistant":
-                parts.append(f"Assistant: {content}\n")
-
-        parts.append("Assistant: ")
-
-        return "\n".join(parts)

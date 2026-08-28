@@ -2,94 +2,116 @@
 FastAPI application entry point for Lenny Growth Assistant.
 Author: khichar-monika15
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 
-from app.config import settings
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL.upper()) if isinstance(settings.LOG_LEVEL, str) else logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+from app.api.v1 import chat, health, sessions, ship30
+from app.config import get_settings
+from app.database import dispose_engine, ping as db_ping
+from app.logging_config import configure_logging, request_id_middleware
+from app.rag.chroma import heartbeat as chroma_heartbeat
+
+settings = get_settings()
+configure_logging(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
+
+
+async def _report_dependencies() -> None:
+    """
+    Log dependency state at boot.
+
+    Startup never blocks on these: the API must come up so its health
+    endpoints can explain what is broken, rather than crash-looping.
+    """
+    if await db_ping():
+        logger.info("PostgreSQL reachable")
+    else:
+        logger.error("PostgreSQL unreachable - sessions and history will fail")
+
+    if await run_in_threadpool(chroma_heartbeat):
+        logger.info("ChromaDB reachable")
+    else:
+        logger.error("ChromaDB unreachable - answers cannot be grounded")
+
+    if not settings.ANTHROPIC_API_KEY:
+        logger.info("No ANTHROPIC_API_KEY set; Claude requests will fall back to Ollama")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
-    # Startup
-    logger.info("🚀 Starting Lenny Growth Assistant")
-    logger.info(f"Environment: {settings.ENVIRONMENT}")
-    logger.info(f"Default LLM: {settings.DEFAULT_MODEL}")
-
-    # TODO: Initialize database connection pool
-    # TODO: Initialize ChromaDB client
-    # TODO: Check Ollama connection
+    logger.info("Starting Lenny Growth Assistant")
+    logger.info("Environment: %s | default model: %s", settings.ENVIRONMENT, settings.DEFAULT_MODEL)
+    await _report_dependencies()
 
     yield
 
-    # Shutdown
-    logger.info("👋 Shutting down Lenny Growth Assistant")
-    # TODO: Close database connections
-    # TODO: Close ChromaDB client
+    logger.info("Shutting down Lenny Growth Assistant")
+    await dispose_engine()
 
 
-# Create FastAPI app
 app = FastAPI(
     title="Lenny Growth Assistant API",
-    description="RAG-powered assistant for Lenny's Podcast transcripts",
+    description=(
+        "RAG-powered assistant for Lenny's Podcast transcripts. "
+        "Answers are grounded in retrieved transcript chunks and cite their sources."
+    ),
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
-# Configure CORS
-origins = settings.CORS_ORIGINS.split(",")
+app.middleware("http")(request_id_middleware)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    """Basic health check endpoint."""
-    return {
-        "status": "healthy",
-        "environment": settings.ENVIRONMENT,
-        "default_model": settings.DEFAULT_MODEL
-    }
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Last resort: log the detail, return a safe body."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_error",
+            "detail": "Something went wrong handling this request.",
+            "hint": "Check the backend logs with: docker compose logs backend",
+        },
+    )
 
 
-@app.get("/")
-async def root():
-    """Root endpoint."""
+@app.get("/", tags=["health"], summary="Service metadata")
+async def root() -> dict:
     return {
-        "message": "Lenny Growth Assistant API",
+        "service": "Lenny Growth Assistant API",
+        "version": app.version,
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
     }
 
 
-# Mount API routers
-from app.api.v1 import chat, health, ship30
-
+app.include_router(health.router)
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(ship30.router, prefix="/api/v1", tags=["ship30"])
-app.include_router(health.router, tags=["health"])
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8080,
-        reload=True if settings.ENVIRONMENT == "development" else False
+        reload=settings.ENVIRONMENT == "development",
     )

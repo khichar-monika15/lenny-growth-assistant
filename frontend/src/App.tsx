@@ -1,126 +1,151 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
+import { ArtifactViewer } from './components/Artifacts/ArtifactViewer'
+import { MessageInput } from './components/Chat/MessageInput'
+import { MessageList } from './components/Chat/MessageList'
+import { ModelSelector } from './components/ModelToggle/ModelSelector'
+import { SessionSidebar } from './components/Session/SessionSidebar'
+import { useChat } from './hooks/useChat'
+import { api } from './services/api'
+import type { ModelProvider, ProviderHealth, RetrievalHealth, SessionSummary } from './types'
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-  sources?: any[]
-}
+export default function App() {
+  const {
+    messages,
+    sessionId,
+    isStreaming,
+    activeArtifact,
+    setActiveArtifact,
+    send,
+    stop,
+    startNewChat,
+    loadSession,
+  } = useChat()
 
-function App() {
-  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
+  const [provider, setProvider] = useState<ModelProvider>('ollama')
+  const [providerHealth, setProviderHealth] = useState<ProviderHealth | null>(null)
+  const [retrieval, setRetrieval] = useState<RetrievalHealth | null>(null)
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const sendMessage = async () => {
-    if (!input.trim() || isStreaming) return
-
-    const userMessage: Message = { role: 'user', content: input }
-    setMessages(prev => [...prev, userMessage])
-    setInput('')
-    setIsStreaming(true)
-
-    // Start with empty assistant message
-    const assistantMessage: Message = { role: 'assistant', content: '', sources: [] }
-    setMessages(prev => [...prev, assistantMessage])
-
+  const refreshSessions = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/v1/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input })
-      })
+      setSessions(await api.listSessions())
+    } catch {
+      // The sidebar is not worth an error banner; the chat still works.
+    }
+  }, [])
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
+  useEffect(() => {
+    let cancelled = false
 
-      while (reader) {
-        const { done, value } = await reader.read()
-        if (done) break
+    const loadHealth = async () => {
+      const [health, index] = await Promise.allSettled([
+        api.providerHealth(),
+        api.retrievalHealth(),
+      ])
+      if (cancelled) return
 
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.substring(6)
-            if (data === '[DONE]') {
-              setIsStreaming(false)
-              break
-            }
-
-            try {
-              const parsed = JSON.parse(data)
-
-              if (parsed.type === 'content_delta') {
-                setMessages(prev => {
-                  const updated = [...prev]
-                  updated[updated.length - 1].content += parsed.delta
-                  return updated
-                })
-              } else if (parsed.type === 'sources') {
-                setMessages(prev => {
-                  const updated = [...prev]
-                  updated[updated.length - 1].sources = parsed.sources
-                  return updated
-                })
-              }
-            } catch (e) {
-              // Ignore parse errors
-            }
-          }
-        }
+      if (health.status === 'fulfilled') {
+        setProviderHealth(health.value)
+        setProvider(health.value.default)
       }
-    } catch (error) {
-      console.error('Error:', error)
-      setIsStreaming(false)
+      if (index.status === 'fulfilled') setRetrieval(index.value)
+    }
+
+    loadHealth()
+    refreshSessions()
+    return () => {
+      cancelled = true
+    }
+  }, [refreshSessions])
+
+  // A finished turn may have created the session or renamed it.
+  useEffect(() => {
+    if (!isStreaming) refreshSessions()
+  }, [isStreaming, refreshSessions])
+
+  const handleSend = async () => {
+    const text = input
+    setInput('')
+    await send(text, provider)
+  }
+
+  const handleSelectSession = async (id: string) => {
+    setSidebarOpen(false)
+    try {
+      await loadSession(id)
+    } catch {
+      await refreshSessions()
     }
   }
 
+  const handleDeleteSession = async (id: string) => {
+    await api.deleteSession(id).catch(() => undefined)
+    if (id === sessionId) startNewChat()
+    await refreshSessions()
+  }
+
   return (
-    <div className="app">
+    <div className={`app ${activeArtifact ? 'with-artifact' : ''}`}>
       <header className="header">
-        <h1>🎯 Lenny Growth Assistant</h1>
-        <p>Ask questions about product and growth from Lenny's Podcast</p>
+        <button
+          className="sidebar-toggle"
+          onClick={() => setSidebarOpen((open) => !open)}
+          aria-expanded={sidebarOpen}
+          aria-label="Toggle chat history"
+        >
+          ☰
+        </button>
+
+        <div className="header-title">
+          <h1>Lenny Growth Assistant</h1>
+          <p>Grounded in Lenny&apos;s Podcast transcripts</p>
+        </div>
+
+        <ModelSelector
+          value={provider}
+          health={providerHealth}
+          onChange={setProvider}
+          disabled={isStreaming}
+        />
       </header>
 
-      <div className="chat-container">
-        <div className="messages">
-          {messages.map((msg, i) => (
-            <div key={i} className={`message ${msg.role}`}>
-              <div className="message-content">
-                {msg.content || (msg.role === 'assistant' && isStreaming ? '▊' : '')}
-              </div>
-              {msg.sources && msg.sources.length > 0 && (
-                <div className="sources">
-                  <strong>Sources:</strong>
-                  {msg.sources.map((source, j) => (
-                    <span key={j} className="source-badge">
-                      {source.transcript_title}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+      <div className="layout">
+        <div className={`sidebar-wrapper ${sidebarOpen ? 'open' : ''}`}>
+          <SessionSidebar
+            sessions={sessions}
+            activeSessionId={sessionId}
+            retrieval={retrieval}
+            onNewChat={() => {
+              setSidebarOpen(false)
+              startNewChat()
+            }}
+            onSelect={handleSelectSession}
+            onDelete={handleDeleteSession}
+          />
         </div>
 
-        <div className="input-area">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-            placeholder="Ask about product-market fit, growth, etc..."
-            disabled={isStreaming}
+        <main className="chat-container">
+          <MessageList
+            messages={messages}
+            isStreaming={isStreaming}
+            onOpenArtifact={setActiveArtifact}
           />
-          <button onClick={sendMessage} disabled={isStreaming || !input.trim()}>
-            {isStreaming ? 'Sending...' : 'Send'}
-          </button>
-        </div>
+          <MessageInput
+            value={input}
+            onChange={setInput}
+            onSend={handleSend}
+            onStop={stop}
+            isStreaming={isStreaming}
+          />
+        </main>
+
+        {activeArtifact && (
+          <ArtifactViewer artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />
+        )}
       </div>
     </div>
   )
 }
-
-export default App

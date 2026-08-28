@@ -1,128 +1,75 @@
 """Ship 30 for 30 essay generation endpoint."""
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional
+import logging
 
-from app.config import get_settings
-from app.llm.factory import LLMProviderFactory
-from app.rag.retriever import VectorRetriever
-from app.rag.context_assembler import ContextAssembler
-from app.services.embedding_service import EmbeddingService
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agent.skills.ship30 import DEFAULT_HOOK_STYLE, HOOK_STYLES, Ship30Skill
+from app.api.errors import to_http_exception
+from app.api.v1.schemas import ErrorResponse, Ship30Request, Ship30Response
+from app.database import get_db
+from app.services import chat_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
-settings = get_settings()
 
 
-class Ship30Request(BaseModel):
-    """Ship 30 essay generation request."""
-    topic: str = Field(..., description="Essay topic")
-    word_count: int = Field(default=300, ge=250, le=1250, description="Target word count")
-    hook_style: str = Field(default="question", description="Hook style: question, stat, story, contrarian")
-    model_provider: Optional[str] = None
+@router.get("/ship30/hook-styles", summary="Available Ship 30 hook styles")
+async def hook_styles() -> dict:
+    """The hook taxonomy the skill encodes, for populating the UI."""
+    return {"default": DEFAULT_HOOK_STYLE, "styles": HOOK_STYLES}
 
 
-@router.post("/ship30/generate")
-async def generate_ship30_essay(request: Ship30Request):
+@router.post(
+    "/ship30/generate",
+    response_model=Ship30Response,
+    responses={503: {"model": ErrorResponse}, 504: {"model": ErrorResponse}},
+    summary="Generate a Ship 30 for 30 style essay",
+)
+async def generate_ship30_essay(
+    request: Ship30Request, db: AsyncSession = Depends(get_db)
+) -> Ship30Response:
     """
-    Generate a Ship 30 for 30 style essay.
+    Write an essay grounded in the transcripts, using the Ship 30 skill.
 
-    Structure: Hook → Body → CTA
-    Style: Terse, scannable, actionable
-    Grounding: All claims backed by Lenny's transcripts
+    The essay is persisted to the session as a normal assistant turn and
+    returned as a Markdown artifact for the viewer.
     """
-    try:
-        # Initialize components
-        retriever = VectorRetriever()
-        await retriever.initialize()
-
-        context_assembler = ContextAssembler(max_tokens=settings.CONTEXT_MAX_TOKENS)
-
-        # Generate embedding
-        embedding_service = EmbeddingService()
-        query_embedding = await embedding_service.generate_embedding(request.topic)
-        await embedding_service.close()
-
-        # Retrieve relevant content
-        chunks = await retriever.retrieve(query_embedding, top_k=15)
-        assembled = context_assembler.assemble_context(chunks)
-
-        # Get LLM provider
-        provider_name = request.model_provider or settings.DEFAULT_MODEL
-        if provider_name == "claude":
-            if not settings.ANTHROPIC_API_KEY:
-                provider_name = "ollama"  # Fallback
-
-            config = {
-                "api_key": settings.ANTHROPIC_API_KEY,
-                "model": "claude-3-5-sonnet-20241022"
-            }
-        else:
-            config = {
-                "base_url": settings.OLLAMA_BASE_URL,
-                "model": settings.OLLAMA_CHAT_MODEL
-            }
-
-        llm = LLMProviderFactory.create_provider(provider_name, config)
-
-        # Build prompt
-        system_prompt = f"""You are an expert at writing Ship 30 for 30 atomic essays.
-
-STRICT REQUIREMENTS:
-- Word count: EXACTLY {request.word_count} words (±10 words acceptable)
-- Structure: Hook → Body → CTA
-- Hook style: {request.hook_style}
-- Style: Terse, scannable, one-sentence paragraphs
-- Grounding: All claims must come from the provided context
-
-CONTEXT from Lenny's Podcast:
-{assembled.context}
-
-Write ONLY the essay. No preamble, no meta-commentary."""
-
-        messages = [
-            {"role": "user", "content": f"Write a Ship 30 essay about: {request.topic}"}
-        ]
-
-        # Generate essay
-        response = await llm.generate(
-            messages=messages,
-            system_prompt=system_prompt,
-            max_tokens=1500,
-            temperature=0.7
+    if request.hook_style not in HOOK_STYLES:
+        raise to_http_exception(
+            ValueError(
+                f"Unknown hook_style '{request.hook_style}'. "
+                f"Expected one of: {', '.join(HOOK_STYLES)}"
+            )
         )
 
-        essay_content = response["content"]
-        word_count = len(essay_content.split())
+    try:
+        turn = await chat_service.send_message(
+            db,
+            message=f"Write a Ship 30 essay about: {request.topic}",
+            session_id=request.session_id,
+            model_provider=request.model_provider,
+            forced_skill=Ship30Skill.name,
+            options={
+                "topic": request.topic,
+                "word_count": request.word_count,
+                "hook_style": request.hook_style,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - translated to a safe response
+        raise to_http_exception(exc) from exc
 
-        # Validate word count (allow ±10% tolerance)
-        min_words = int(request.word_count * 0.9)
-        max_words = int(request.word_count * 1.1)
-
-        if not (min_words <= word_count <= max_words):
-            # Retry once with explicit word count feedback
-            retry_prompt = f"""The previous essay was {word_count} words, but needs to be {request.word_count} words.
-
-Rewrite it to EXACTLY {request.word_count} words (±10 acceptable). Keep the same topic and structure."""
-
-            messages.append({"role": "assistant", "content": essay_content})
-            messages.append({"role": "user", "content": retry_prompt})
-
-            retry_response = await llm.generate(
-                messages=messages,
-                system_prompt=system_prompt,
-                max_tokens=1500
-            )
-
-            essay_content = retry_response["content"]
-            word_count = len(essay_content.split())
-
-        return {
-            "essay": essay_content,
-            "word_count": word_count,
-            "target_word_count": request.word_count,
-            "sources": assembled.sources,
-            "model_provider": provider_name
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Essay generation failed: {str(e)}")
+    return Ship30Response(
+        session_id=turn.session_id,
+        essay=turn.message,
+        artifact=turn.artifact,
+        word_count=turn.metadata.get("word_count", 0),
+        target_word_count=turn.metadata.get("target_word_count", request.word_count),
+        within_tolerance=turn.metadata.get("within_tolerance", False),
+        hook_style=turn.metadata.get("hook_style", request.hook_style),
+        sources=turn.sources,
+        provider=turn.provider,
+        model=turn.model,
+        fallback_reason=turn.fallback_reason,
+    )

@@ -1,176 +1,85 @@
-"""
-Chat endpoints with SSE streaming support.
-"""
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import Optional
+"""Chat endpoints with SSE streaming support."""
 import json
 import logging
+from typing import AsyncIterator
 
-from app.config import settings
-from app.llm.factory import LLMProviderFactory
-from app.rag.retriever import VectorRetriever
-from app.rag.context_assembler import ContextAssembler
-from app.services.embedding_service import EmbeddingService
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.errors import to_http_exception, to_stream_event
+from app.api.v1.schemas import ChatRequest, ChatResponse, ErrorResponse
+from app.database import get_db
+from app.services import chat_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-class ChatRequest(BaseModel):
-    """Chat request model."""
-    message: str
-    session_id: Optional[str] = None
-    model_provider: Optional[str] = None
-
-
-# Components will be initialized lazily per request
-# (avoids startup dependency on ChromaDB being ready)
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    # Stop nginx and friends buffering the stream into one lump.
+    "X-Accel-Buffering": "no",
+}
 
 
-def get_llm_provider(provider_name: Optional[str] = None):
-    """Get LLM provider instance."""
-    provider_name = provider_name or settings.DEFAULT_MODEL
-
-    if provider_name == "claude":
-        if not settings.ANTHROPIC_API_KEY:
-            raise HTTPException(
-                status_code=503,
-                detail="Anthropic API key not configured. Using Ollama as fallback."
-            )
-        config = {
-            "api_key": settings.ANTHROPIC_API_KEY,
-            "model": "claude-3-5-sonnet-20241022"
-        }
-    else:  # ollama
-        config = {
-            "base_url": settings.OLLAMA_BASE_URL,
-            "model": settings.OLLAMA_CHAT_MODEL
-        }
-
-    return LLMProviderFactory.create_provider(provider_name, config)
-
-
-@router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    responses={503: {"model": ErrorResponse}, 504: {"model": ErrorResponse}},
+    summary="Send a message and wait for the full reply",
+)
+async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)) -> ChatResponse:
     """
-    Stream chat response via SSE.
+    Route the message to a skill, ground it in the transcripts, and persist the turn.
 
-    Returns:
-        SSE stream with events: retrieval_start, sources, content_delta, message_stop
+    Omit `session_id` to start a new session; the id is returned so follow-up
+    turns can continue the conversation.
     """
-    async def event_generator():
+    try:
+        turn = await chat_service.send_message(
+            db,
+            message=request.message,
+            session_id=request.session_id,
+            model_provider=request.model_provider,
+            forced_skill=request.skill,
+        )
+    except Exception as exc:  # noqa: BLE001 - translated to a safe response
+        raise to_http_exception(exc) from exc
+
+    return ChatResponse(**turn.to_dict())
+
+
+@router.post(
+    "/chat/stream",
+    summary="Send a message and stream the reply over SSE",
+    response_class=StreamingResponse,
+)
+async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Stream a turn as Server-Sent Events.
+
+    Events: `session`, `sources`, `content_delta`*, `artifact`?, `message_stop`.
+    On failure an `error` event is emitted and the stream is still terminated
+    with `[DONE]`, so a client is never left hanging.
+    """
+
+    async def event_generator() -> AsyncIterator[str]:
         try:
-            # Step 1: Retrieval
-            yield f"data: {json.dumps({'type': 'retrieval_start'})}\n\n"
-
-            # Initialize retriever
-            retriever = VectorRetriever()
-            await retriever.initialize()
-
-            # Generate query embedding
-            embedding_service = EmbeddingService()
-            query_embedding = await embedding_service.generate_embedding(request.message)
-            await embedding_service.close()
-
-            # Retrieve chunks
-            chunks = await retriever.retrieve(
-                query_embedding=query_embedding,
-                top_k=settings.RETRIEVAL_TOP_K
-            )
-
-            # Assemble context
-            context_assembler = ContextAssembler(max_tokens=settings.CONTEXT_MAX_TOKENS)
-            assembled = context_assembler.assemble_context(chunks)
-
-            # Send sources
-            yield f"data: {json.dumps({'type': 'sources', 'sources': assembled.sources})}\n\n"
-
-            # Step 2: Generate response
-            llm = get_llm_provider(request.model_provider)
-
-            # Build messages
-            system_prompt = f"""You are Lenny's Growth Assistant. Answer questions about product management and growth based on the provided context from Lenny's Podcast.
-
-Context from Lenny's Podcasts:
-{assembled.context}
-
-If the context doesn't contain enough information to answer the question, say so clearly and suggest what information you'd need."""
-
-            messages = [
-                {"role": "user", "content": request.message}
-            ]
-
-            # Stream LLM response
-            async for chunk in llm.stream(
-                messages=messages,
-                system_prompt=system_prompt,
-                max_tokens=2048,
-                temperature=0.7
+            async for event in chat_service.stream_message(
+                db,
+                message=request.message,
+                session_id=request.session_id,
+                model_provider=request.model_provider,
+                forced_skill=request.skill,
             ):
-                yield f"data: {json.dumps(chunk)}\n\n"
-
-            # Done
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as exc:  # noqa: BLE001 - translated to a safe event
+            yield f"data: {json.dumps(to_stream_event(exc))}\n\n"
+        finally:
             yield "data: [DONE]\n\n"
 
-        except Exception as e:
-            logger.error(f"Chat stream error: {e}", exc_info=True)
-            error_data = {
-                "type": "error",
-                "error": str(e)
-            }
-            yield f"data: {json.dumps(error_data)}\n\n"
-
     return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
+        event_generator(), media_type="text/event-stream", headers=SSE_HEADERS
     )
-
-
-@router.post("/chat")
-async def chat(request: ChatRequest):
-    """
-    Non-streaming chat endpoint.
-    """
-    # Initialize retriever
-    retriever = VectorRetriever()
-    await retriever.initialize()
-
-    # Generate query embedding
-    embedding_service = EmbeddingService()
-    query_embedding = await embedding_service.generate_embedding(request.message)
-    await embedding_service.close()
-
-    # Retrieve and assemble
-    chunks = await retriever.retrieve(query_embedding, top_k=settings.RETRIEVAL_TOP_K)
-    context_assembler = ContextAssembler(max_tokens=settings.CONTEXT_MAX_TOKENS)
-    assembled = context_assembler.assemble_context(chunks)
-
-    # Generate response
-    llm = get_llm_provider(request.model_provider)
-
-    system_prompt = f"""You are Lenny's Growth Assistant. Answer questions about product management and growth based on the provided context.
-
-Context:
-{assembled.context}"""
-
-    messages = [{"role": "user", "content": request.message}]
-
-    response = await llm.generate(
-        messages=messages,
-        system_prompt=system_prompt,
-        max_tokens=2048
-    )
-
-    return {
-        "message": response["content"],
-        "sources": assembled.sources,
-        "usage": response["usage"]
-    }
