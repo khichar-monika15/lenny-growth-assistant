@@ -78,9 +78,10 @@ async def root():
 
 
 # Mount API routers
-from app.api.v1 import chat, health
+from app.api.v1 import chat, health, ship30
 
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+app.include_router(ship30.router, prefix="/api/v1", tags=["ship30"])
 app.include_router(health.router, tags=["health"])
 
 
