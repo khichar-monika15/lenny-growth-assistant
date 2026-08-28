@@ -1,536 +1,314 @@
-# Design Document: The Lenny Growth Assistant
+# Design
 
-**Author:** Monika Kumari (khichar-monika15)  
-**Date:** August 28, 2026
-
----
-
-## Design Philosophy
-
-**Principle:** Clarity over cleverness. The bakasur interface should feel like a conversation with a knowledgeable colleague, not a complex tool.
-
-**Goals:**
-1. **Immediate Value:** Answer visible within 3 seconds of asking
-2. **Trust:** Source citations on every response build credibility
-3. **Simplicity:** One input field, one action (Send)
-4. **Responsive:** Works on phone, tablet, desktop
+UI and UX decisions for The Lenny Growth Assistant, and the reasoning behind
+them.
 
 ---
 
-## Information Architecture
+## 1. Principles
 
-### Layout Structure
+**Citations are the product, not a footnote.** The assistant's whole claim is
+that it answers from real transcripts. If a reader cannot tell a grounded answer
+from an invented one, the product has failed at the thing it exists to do. So
+sources are attached to the message that used them, always present when they
+exist, and conspicuously absent when they are not.
 
-```
-┌─────────────────────────────────────────────────┐
-│  🎯 Lenny Growth Assistant                      │
-│  Ask questions about product and growth         │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  ┌─────────────────────────────────────────┐   │
-│  │  👤 What did Lenny say about PMF?       │   │
-│  └─────────────────────────────────────────┘   │
-│                                                 │
-│  ┌─────────────────────────────────────────┐   │
-│  │  🤖 Product-market fit is when...       │   │
-│  │                                         │   │
-│  │  Sources:                               │   │
-│  │  [Rahul Vohra on PMF] [Lenny on Growth] │   │
-│  └─────────────────────────────────────────┘   │
-│                                                 │
-├─────────────────────────────────────────────────┤
-│  [ Ask about product-market fit, growth, etc... │
-│                                    [Send] │   │
-└─────────────────────────────────────────────────┘
-```
+**Never look confident about a failure.** A blank reply, a stalled spinner or a
+plausible answer with no sources are all worse than a plain error. Every failure
+path renders visibly and in the place it happened.
 
-**Desktop (>1024px):**
-- Header: 100px
-- Chat messages: Flex 1 (fills space)
-- Input area: 80px
+**Reading beats decorating.** The content is dense prose and long-form essays.
+Line length, spacing and heading rhythm get the attention; there are no
+gradients, shadows or brand flourishes competing with the text.
 
-**Mobile (<768px):**
-- Stack vertically
-- Input area becomes bottom sheet (fixed position)
+**Nothing to configure to get value.** No prompt box, no chunk size, no model
+name required. The model toggle exists because the brief asks for it to be
+visible, and it shows status rather than settings.
+
+**Match the mental model people already have.** Sidebar of conversations, centre
+thread, document panel on the right. Familiar from every tool this audience
+already uses, so no learning cost.
 
 ---
 
-## Component Design
-
-### Chat Message
-
-**User Message:**
-```
-┌─────────────────────────────────┐
-│ What did Lenny say about PMF?   │ ← Blue background (#2563eb)
-└─────────────────────────────────┘   White text, right-aligned
-```
-
-**Assistant Message:**
-```
-┌─────────────────────────────────────┐
-│ Product-market fit is when your     │ ← Gray background (#f3f4f6)
-│ users would be very disappointed... │   Dark text, left-aligned
-│                                     │
-│ Sources:                            │
-│ [Rahul Vohra on PMF]                │ ← Light blue badges
-│ [Lenny on Growth Loops]             │
-└─────────────────────────────────────┘
-```
-
-**Streaming Message (typing indicator):**
-```
-Product-market fit is▊  ← Cursor animates
-```
-
-### Source Citation Badge
+## 2. Information architecture
 
 ```
-┌───────────────────────┐
-│ Rahul Vohra on PMF    │ ← #dbeafe background
-└───────────────────────┘   #1e40af text, 12px font
+┌────────────────────────────────────────────────────────────────────┐
+│  Lenny Growth Assistant                        ● Local  ○ Cloud    │  header
+├──────────────┬─────────────────────────────┬───────────────────────┤
+│ + New chat   │                             │  markdown  ▾          │
+│              │   You                       │  Talent density       │
+│ Enterprise…  │   What does Jen Abel say…   │  ┌─────────────────┐  │
+│ Talent dens… │                             │  │ # Talent den…   │  │
+│ Pricing tie… │   Assistant                 │  │                 │  │
+│              │   Jen Abel argues that…     │  │ Preview | Source│  │
+│              │   ▸ 3 sources               │  │                 │  │
+│              │                             │  └─────────────────┘  │
+│              │                             │                       │
+│ 361 chunks   │  ┌───────────────────────┐  │  Copy  Download  ×    │
+│ indexed      │  │ Ask about…      [Send]│  │                       │
+└──────────────┴──┴───────────────────────┴──┴───────────────────────┘
+   sidebar              conversation            artifact viewer
+   250px                flexible                460px, on demand
 ```
 
-**Hover State:**
-- Background: #bfdbfe
-- Cursor: pointer
-- Shows similarity score in tooltip: "Similarity: 87%"
+**Three regions, one of which is conditional.**
 
-### Input Area
+The **sidebar** holds session history and, at its foot, the index status — the
+indexed chunk count. That placement is deliberate: the single most likely
+failure an evaluator hits is a running stack with an empty index, and this makes
+it visible without opening a terminal.
+
+The **conversation** is the centre and the default. Messages are capped at 760px
+and centred, because a full-width line of prose at 1600px is unreadable.
+
+The **artifact viewer** appears only when a document exists, and takes a fixed
+460px so the conversation never collapses to a sliver. It is a peer of the chat,
+not a modal over it — the brief asks for artifacts *beside* the chat, and a
+modal would break the ability to keep talking while reading.
+
+### Message anatomy
 
 ```
-┌──────────────────────────────────────────┐
-│ Ask about product-market fit, growth,... │ ← Placeholder
-├──────────────────────────────────────────┤
-│                                   [Send] │
-└──────────────────────────────────────────┘
+ASSISTANT                              ← role label, small caps, muted
+┌──────────────────────────────────┐
+│ Jen Abel argues the first        │  ← markdown rendered, not raw text
+│ meeting is a group effort…       │
+└──────────────────────────────────┘
+  ▸ 3 sources                          ← collapsed by default
+  [markdown] Talent density            ← artifact chip, when one exists
 ```
 
-**States:**
-- **Empty:** Send button disabled (gray)
-- **Typing:** Send button enabled (blue)
-- **Streaming:** Send button shows "Sending..." (disabled)
+Assistant replies render as Markdown. The model produces headings, lists and
+emphasis; showing that as literal `##` and `**` would waste the formatting the
+Ship 30 skill works hard to produce.
+
+Sources collapse by default. Expanded they show a numbered badge matching the
+`[Source n]` markers in the prompt, the episode title as a link, the guest, the
+date, and the match as a percentage:
+
+```
+▾ 3 sources
+  ① How to close $100K+ enterprise deals
+    Jen Abel · 2026-08-23 · 64% match
+```
+
+The percentage is shown because it is honest about confidence in a way prose
+cannot be. A 30% match and a 90% match are different claims, and a reader
+deciding whether to trust an answer deserves to see which they have.
 
 ---
 
-## Interaction States
+## 3. Interaction states
 
-### Loading States
+Every state below is implemented, not aspirational.
 
-**1. Initial Load:**
-```
-┌─────────────────────────────┐
-│  🎯 Lenny Growth Assistant  │
-│  Loading...                 │
-└─────────────────────────────┘
-```
+### Empty
 
-**2. Retrieval (1-2 seconds):**
-```
-🔍 Searching transcripts...
-```
+First load shows what the assistant is for and three example prompts covering
+the three skills — a question, an essay, a document. This is the only routing
+documentation a user gets, and it is enough: seeing "Write a Ship 30 essay
+about…" teaches the pattern without explaining it.
 
-**3. Streaming Response:**
-```
-Product-market fit is when▊
-```
+### Thinking
 
-**4. Complete:**
-```
-Product-market fit is when... [Full response]
+Between send and first token, the assistant bubble shows three pulsing dots.
+Local models can take several seconds before the first token, and an empty
+bubble reads as broken.
 
-Sources: [Badges]
-```
+### Streaming
 
-### Error States
+Tokens append live. The send button becomes **Stop**, wired to an `AbortController`,
+because a local model producing a 1,250-word essay is a long commitment to be
+locked into.
 
-**Ollama Unavailable:**
-```
-┌─────────────────────────────────┐
-│ ⚠️ Ollama is offline           │
-│ Try switching to Claude         │
-│ [Switch to Claude]              │
-└─────────────────────────────────┘
-```
+Auto-scroll follows the stream **only while the user is already at the bottom**.
+Scroll up to re-read an earlier passage and the view stays put. A chat that drags
+you back down mid-sentence is actively hostile, and it is a common bug.
 
-**No Relevant Context:**
-```
-I don't have enough information about X in Lenny's transcripts.
-Try rephrasing or asking about a different topic.
-```
+### Sources arriving
 
-**Network Error:**
-```
-❌ Connection failed. Check your internet and try again.
-[Retry]
-```
+Sources arrive before the first token, since retrieval precedes generation, and
+attach to the message immediately. The user can see what the answer will be based
+on while it is still being written.
 
-### Empty States
+### Error
 
-**No Messages Yet:**
-```
-┌──────────────────────────────────────┐
-│      🎯 Ask Your First Question      │
-│                                      │
-│  Examples:                           │
-│  • What did Lenny say about PMF?     │
-│  • How do I find product-market fit? │
-│  • Best growth loops for SaaS?       │
-└──────────────────────────────────────┘
-```
+Errors render inside the message that failed, in a red-bordered block, carrying
+the backend's `detail` and `hint`:
+
+> The model took too long to respond. Local models are slow on first load. Retry,
+> or raise `OLLAMA_TIMEOUT_SECONDS`.
+
+Two rules. **The composer always re-enables** — the streaming flag is cleared in
+a `finally`, so no failure can strand the UI in a permanently disabled state.
+And **partial output is kept**: if a stream dies halfway, the text so far stays
+on screen with the error beneath it, rather than discarding work the user might
+still want.
+
+### Ungrounded answer
+
+When retrieval fails, the message carries an explicit warning that the answer is
+not grounded. This is the state the whole design exists to make impossible to
+miss.
+
+### Degraded provider
+
+If Claude is selected without an API key, the toggle still works, the request
+falls back to Ollama, and the header states why. A dead control that silently
+does nothing is worse than one that explains itself.
 
 ---
 
-## Responsive Behavior
+## 4. The artifact viewer
 
-### Breakpoints
+Two tabs. **Preview** renders; **Source** shows the raw Markdown or HTML in a
+scrollable block. Source is not a debug affordance — a content owner who wants
+the Markdown to paste elsewhere needs it, and it is also how a reviewer confirms
+what the sanitiser produced.
 
-- **Mobile:** 320px - 767px
-- **Tablet:** 768px - 1023px
-- **Desktop:** 1024px+
+**Copy** and **Download** are always available. Download infers the extension
+from the artifact type and slugifies the title.
 
-### Mobile Adaptations
+Closing the viewer does not destroy the artifact. Every message that produced one
+keeps a chip, so it reopens with a click. Generation is slow locally; losing an
+essay to a stray close would be painful.
 
-**Chat Messages:**
-- Max width: 90% (was 80% on desktop)
-- Font size: 16px (was 16px, no change - prevents zoom on iOS)
-- Line height: 1.6 (better readability on small screens)
+### Communicating the security boundary
 
-**Input Area:**
-- Fixed to bottom (position: fixed, bottom: 0)
-- Safe area inset for iPhone notch: `padding-bottom: env(safe-area-inset-bottom)`
+When the sanitiser strips something, the viewer says so above the frame:
 
-**Source Badges:**
-- Stack vertically on <400px width
-- Horizontal scroll if >3 sources
+> **Blocked for safety:** element: script, event handler: onerror. The viewer
+> renders layout and styling only.
 
----
-
-## Typography
-
-### Font Stack
-```css
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
-             'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans',
-             'Helvetica Neue', sans-serif;
-```
-
-**Rationale:** System fonts load instantly, feel native on each platform
-
-### Scale
-
-| Element | Size | Weight | Line Height |
-|---------|------|--------|-------------|
-| Page Title | 2.5rem (40px) | 700 | 1.2 |
-| Subtitle | 1rem (16px) | 400 | 1.5 |
-| Message Text | 1rem (16px) | 400 | 1.6 |
-| Source Badge | 0.75rem (12px) | 500 | 1.4 |
-| Input Text | 1rem (16px) | 400 | 1.5 |
-
-**Why 16px base?** Prevents mobile browser zoom on input focus (iOS behavior)
+Silent stripping would leave a user confused about why their page does nothing.
+Naming the removals turns an invisible security control into a legible one, which
+is what the brief asks for: the evaluator should understand what the viewer
+permits and blocks.
 
 ---
 
-## Color System
+## 5. Responsive behaviour
 
-### Light Theme (Default)
+| Breakpoint | Layout |
+|---|---|
+| **> 1100px** | Three columns. Sidebar 250px, conversation flexible, artifact 460px |
+| **820 – 1100px** | Sidebar and conversation side by side. The artifact viewer becomes a full-height overlay, since three columns below 1100px leaves the conversation unusably narrow |
+| **< 820px** | Single column. The sidebar becomes an off-canvas drawer behind a ☰ toggle. The header wraps and the model toggle moves to its own row |
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--primary` | #2563eb | User messages, buttons, links |
-| `--primary-hover` | #1d4ed8 | Button hover states |
-| `--bg-page` | #f9fafb | Page background |
-| `--bg-message-user` | #2563eb | User message bubble |
-| `--bg-message-assistant` | #f3f4f6 | Assistant message bubble |
-| `--bg-source` | #dbeafe | Source citation badges |
-| `--text-primary` | #1a1a1a | Main text |
-| `--text-secondary` | #666666 | Subtitles, placeholders |
-| `--border` | #e0e0e0 | Dividers, input borders |
+The composer, message list and artifact body each scroll independently, so the
+page itself never scrolls horizontally.
 
-### Accessibility
-
-**WCAG AA Compliance:**
-- Text on `--bg-message-assistant` (#f3f4f6): 10.2:1 contrast ratio ✅
-- Text on `--primary` (white on #2563eb): 5.8:1 contrast ratio ✅
-- Source badges: 7.1:1 contrast ratio ✅
-
-**Color Blind Safe:**
-- No reliance on color alone for state (use icons + text)
-- User/assistant differentiated by position (left/right) not just color
+Below 820px the input keeps a comfortable target size and the textarea grows to
+six rows before scrolling internally. Enter sends and Shift+Enter inserts a
+newline, which is the convention this audience expects.
 
 ---
 
-## Accessibility (a11y)
+## 6. Accessibility
 
-### Keyboard Navigation
+Implemented, not planned:
 
-**Tab Order:**
-1. Input field
-2. Send button
-3. Source badges (clickable)
+**Structure.** Semantic landmarks throughout: `<header>`, `<nav aria-label="Chat sessions">`,
+`<main>`, `<aside aria-label="Artifact viewer">`, and each message as an
+`<article>`.
 
-**Shortcuts:**
-- `Enter` in input field → Send message
-- `Cmd/Ctrl + K` → Focus input (future)
+**Screen readers.** The streaming region carries `aria-live="polite"`, announcing
+that a reply is in progress and when it completes, without reading every token
+as it arrives. Errors use `role="alert"` so they interrupt. The textarea has a
+visually hidden `<label>`. Source badge numbers are `aria-hidden`, since the text
+beside them already carries the meaning.
 
-### Screen Reader Support
+**Keyboard.** Every control is a real `<button>` or `<textarea>`, so tab order
+follows the visual order with no `tabindex` juggling. The artifact body is
+focusable, so its scroll region is keyboard reachable. `:focus-visible` gives a
+2px outline with offset on every interactive element. The model toggle is a
+proper `role="radiogroup"` with `aria-checked`, not styled divs. Source and tab
+disclosures expose `aria-expanded` and `aria-selected`.
 
-**Chat Message:**
-```html
-<div role="article" aria-label="Assistant message">
-  <div>Product-market fit is when...</div>
-  <div role="list" aria-label="Sources">
-    <span role="listitem">Rahul Vohra on PMF</span>
-  </div>
-</div>
-```
+**Colour and contrast.** Body text `#1f2933` on `#ffffff` is 13.6:1; muted text
+`#6b7684` is 4.7:1; the accent `#2563eb` is 5.9:1. All clear WCAG AA. Provider
+status is never colour alone — the dot is paired with a text label and a
+tooltip, so red/green colour blindness does not hide it.
 
-**Live Region for Streaming:**
-```html
-<div aria-live="polite" aria-atomic="false">
-  {streamingContent}
-</div>
-```
+**Motion.** `prefers-reduced-motion: reduce` collapses every animation and
+transition and disables smooth scrolling.
 
-**Rationale:** Screen readers announce new content as it streams
-
-### Focus Management
-
-- Autofocus on page load: Input field
-- After sending: Focus returns to input
-- Error messages: Announced via `aria-live="assertive"`
+**Known gaps, stated honestly.** No skip-to-content link, which a longer page
+would need. Focus is not moved into the artifact viewer when it opens, so a
+screen reader user must tab to it. No dark theme. All three are small, and all
+three are unfinished rather than considered done.
 
 ---
 
-## Animation & Motion
+## 7. Visual system
 
-### Principles
+**Type.** The system font stack — no webfont, so no network request, no layout
+shift, and text that looks native. 15px base, 1.6 line height for prose. Headings
+step 1.32 / 1.10 / 0.98rem: a small scale, because the content supplies the
+hierarchy.
 
-1. **Subtle:** Animations should feel natural, not distracting
-2. **Fast:** <200ms for UI transitions
-3. **Purposeful:** Only animate state changes (loading, error, success)
+**Colour.** Near-neutral greys with one blue accent used only for interactive
+and selected states, so anything blue is something you can act on. Semantic
+colours are reserved for meaning: green available, amber degraded, red failed.
 
-### Implemented Animations
+**Space.** A 4px base unit. 20px inside message bubbles, 24px around the message
+list, 14px in the sidebar. Generous vertical rhythm between messages so a long
+thread stays scannable.
 
-**Message Fade In:**
-```css
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-```
-- Duration: 300ms
-- Easing: ease-out
-- Trigger: New message appears
-
-**Typing Indicator:**
-```css
-content: "▊";
-animation: blink 1s step-end infinite;
-```
-
-**Reduced Motion:**
-```css
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation: none !important;
-    transition: none !important;
-  }
-}
-```
+**Radius.** 10px on containers, 6 to 9px on controls. Consistent enough to read
+as one system.
 
 ---
 
-## Ship 30 Artifact Viewer
+## 8. Design decisions
 
-### Layout
-
-```
-┌─────────────────────────────────────────┐
-│  📄 Ship 30 Essay              [✕ Close] │
-├─────────────────────────────────────────┤
-│                                         │
-│  How do you know when you've found PMF? │  ← Rendered Markdown
-│                                         │
-│  Most founders miss the signal.         │
-│                                         │
-│  [Essay content...]                     │
-│                                         │
-│  ────────────────────────────────────   │
-│  Word count: 298 / 300                  │
-│  Sources: 5 transcripts                 │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-**Desktop:** Modal overlay (80% width, centered)  
-**Mobile:** Full-screen modal
-
-### Markdown Rendering
-
-**Supported Syntax:**
-- Headers: `#`, `##`, `###`
-- Bold: `**text**`
-- Italic: `*text*`
-- Lists: `- item`, `1. item`
-- Line breaks: `\n\n`
-
-**Not Supported (Security):**
-- `<script>` tags (stripped by DOMPurify)
-- `<iframe>`, `<object>`, `<embed>` (stripped)
-- Event handlers: `onclick`, `onerror` (stripped)
+| Decision | Alternative | Why |
+|---|---|---|
+| Sources collapsed by default | Always expanded | Three expanded citations push the next question off screen. The count is visible; the detail is one click |
+| Match shown as a percentage | Hidden, or a vague label | A weak match and a strong one are different claims. Hiding that asks the reader to trust blindly |
+| Artifact as a side panel | Modal, or new tab | The brief asks for beside the chat. A modal blocks the conversation; a tab leaves the product |
+| Preview and Source tabs | Preview only | Content owners need the raw text; reviewers need to see what the sanitiser produced |
+| Named removals in the viewer | Silent stripping | An invisible security control is one the user cannot reason about |
+| Auto-scroll only when pinned to bottom | Always scroll | Being dragged down while re-reading is worse than missing a token |
+| Stop button during streaming | Wait it out | A local 1,250-word essay is a multi-minute commitment |
+| Index count in the sidebar | Hidden in health checks | The most likely failure is an empty index. Surface it where it will be seen |
+| Errors inline on the message | Global toast | The error belongs to the turn that failed, and toasts vanish before they are read |
+| Keep partial output on error | Discard and show the error | A half-written answer is often still useful |
+| Markdown rendered in chat | Plain text | The model produces structure; showing raw `##` throws it away |
+| System font stack | A webfont | No network request, no layout shift, native feel |
+| Light theme only | Light and dark | Honest scoping. A half-done dark theme is worse than none |
 
 ---
 
-## UI Patterns & Conventions
+## 9. Handoff notes
 
-### Feedback Mechanisms
+**CSS** is a single `App.css` with custom properties at `:root` for colour,
+radius and the two panel widths. No preprocessor and no utility framework: the
+surface is small enough that one file is easier to follow than a build step. To
+retheme, change the tokens.
 
-**Immediate Feedback (<100ms):**
-- Button press: Color change
-- Input focus: Border color + shadow
+**Components** are grouped by feature rather than type:
 
-**Short Feedback (1-3s):**
-- Retrieval: "Searching transcripts..."
-- Model switch: "Switched to Claude"
-
-**Progress Feedback (>3s):**
-- Streaming: Words appear in real-time
-- Ingestion: Progress bar (not in MVP)
-
-### Error Recovery
-
-**User-Actionable Errors:**
 ```
-❌ Ollama is offline
-[Switch to Claude] [Retry]
+components/
+  Chat/       MessageList · MessageInput · SourceList
+  Artifacts/  ArtifactViewer · MarkdownRenderer · SandboxedHtml · sanitize.ts
+  ModelToggle/ModelSelector
+  Session/    SessionSidebar
+hooks/
+  useChat.ts  message state, session, SSE lifecycle
 ```
 
-**System Errors:**
-```
-Something went wrong. Please try again.
-[Retry]
-```
+**State** lives in `useChat`, a single hook holding messages, the active session,
+the streaming flag and the active artifact. Zustand and Redux were both
+unnecessary at this size: one hook and two pieces of local component state are
+easier to follow than a store, and the tree is shallow enough that prop drilling
+never exceeds two levels. If session state grows to need sharing across distant
+components, a store is the right next step.
 
-**No-Action-Needed Errors:**
-```
-ℹ️ Using Ollama (Claude key not configured)
-```
-
----
-
-## Design Decisions & Rationale
-
-| Decision | Alternative | Rationale |
-|----------|-------------|-----------|
-| **Single Column Chat** | Multi-column (sidebar + chat) | Simpler, mobile-friendly |
-| **No Sessions Sidebar** | Persistent session list | MVP focuses on single session |
-| **Sources as Badges** | Dropdown/modal | Visible without interaction |
-| **Streaming UI** | Load-then-show | Perceived performance, engagement |
-| **No Dark Mode** | Auto dark mode | Time constraint (MVP), add in V2 |
-| **System Fonts** | Custom fonts | Instant load, native feel |
-| **Fixed Input** | Inline input | Always accessible on mobile |
-
----
-
-## Future Enhancements (V2)
-
-### UX Improvements
-1. **Conversation History:** Sidebar with past sessions
-2. **Copy to Clipboard:** One-click copy for messages/essays
-3. **Regenerate Response:** Retry with different model
-4. **Thumbs Up/Down:** Feedback on answer quality
-5. **Share Link:** Permalink to specific answer
-
-### Accessibility
-1. **High Contrast Mode:** WCAG AAA compliance
-2. **Font Size Controls:** User-adjustable text size
-3. **Voice Input:** Dictation support
-4. **Keyboard Shortcuts:** Power-user efficiency
-
-### Visual Polish
-1. **Dark Mode:** Auto-detect system preference
-2. **Animated Transitions:** Page navigation
-3. **Confetti:** On Ship 30 essay generation 🎉
-4. **Empty State Illustrations:** Custom graphics
-
----
-
-## Design System (Future)
-
-### Component Library
-- Button (Primary, Secondary, Destructive)
-- Input (Text, Textarea, Select)
-- Card (Message, Source, Essay)
-- Modal (Artifact Viewer, Settings)
-- Badge (Source, Status, Tag)
-
-### Spacing Scale
-```
---space-xs: 4px
---space-sm: 8px
---space-md: 16px
---space-lg: 24px
---space-xl: 32px
-```
-
-### Border Radius
-```
---radius-sm: 4px   (badges)
---radius-md: 8px   (inputs, buttons)
---radius-lg: 12px  (messages, cards)
-```
-
----
-
-## Testing Plan
-
-### Visual Regression
-- Storybook for component isolation
-- Percy for screenshot diffs
-
-### User Testing
-- Task: "Ask a question and find the source"
-- Success: <30 seconds, no help needed
-
-### Accessibility Audit
-- axe DevTools: 0 violations
-- Lighthouse: >90 accessibility score
-- Manual keyboard nav: All features accessible
-
----
-
-## Handoff Notes for Developers
-
-### CSS Architecture
-- Use CSS custom properties (variables)
-- BEM naming for complex components
-- Utility classes for spacing/alignment
-
-### Component Structure
-```
-src/
-  components/
-    Chat/
-      ChatContainer.tsx
-      Message.tsx
-      MessageList.tsx
-      MessageInput.tsx
-      SourceCitation.tsx
-    Artifacts/
-      ArtifactViewer.tsx
-      MarkdownRenderer.tsx
-```
-
-### State Management
-- Zustand for global state (messages, sessions)
-- Local state for UI (input value, modal open)
-- No Redux (overkill for this app)
-
-**bakasur design complete!**
+**Adding a state** means handling it in the `useChat` event switch and rendering
+it in `MessageList`. Every state the assistant can be in is represented on the
+message object — `content`, `sources`, `artifact`, `error` — so there is no
+separate state machine to keep in sync.

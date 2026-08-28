@@ -1,424 +1,324 @@
-# Testing Guide: The Lenny Growth Assistant
+# Testing
 
-**For:** Monika Kumari (khichar-monika15)  
-**Demo Date:** August 28, 2026
-
----
-
-## Prerequisites
-
-Before testing, ensure you have:
-- [x] Docker Desktop installed and running
-- [x] At least 8GB RAM available
-- [x] 20GB free disk space (for Ollama models)
+Automated coverage, then a manual UI plan an evaluator can work through in about
+fifteen minutes.
 
 ---
 
-## Setup (First Time)
-
-### 1. Start the Stack
+## Automated tests
 
 ```bash
-cd /path/to/lenny
+docker compose exec backend python -m pytest        # 101 tests
+cd frontend && npm test                             # 18 tests
+cd frontend && npm run typecheck
+```
+
+Backend tests run inside the container so they hit the real PostgreSQL. Tests
+that need the database skip with a clear message if it is not up, rather than
+failing confusingly.
+
+| Area | File | What it pins |
+|---|---|---|
+| Chunking | `tests/ingestion/test_chunker.py` | Termination on the exact inputs that used to loop forever; token ceiling; paragraph alignment; exact character offsets; overlap; coverage of the whole document |
+| Routing | `tests/agent/test_router.py` | Essay, document and question intents in both directions; forced skill; topic extraction; format detection; unknown skill rejected |
+| Ship 30 | `tests/agent/test_ship30.py` | Every encoded rule reaches the prompt; word-count tolerance band; token budget scales with target; section count; artifact and title extraction |
+| Retrieval | `tests/rag/test_retrieval.py` | Cosine distance to similarity; scores clamped to 0..1; similarity floor drops weak matches; empty index; guests parsed back from the joined string; missing metadata tolerated |
+| Context assembly | `tests/rag/test_retrieval.py` | Best-first ordering; deduplication; hard token budget; one oversized chunk still returned; citation numbering |
+| Sessions and persistence | `tests/api/test_sessions_api.py` | CRUD; cascade delete; turns persisted with citations, tokens and provider; title derived from first message |
+| Session isolation | `tests/api/test_sessions_api.py` | One session's history never leaks into another's prompt; prior turns replayed within a session |
+| API contracts | `tests/api/test_sessions_api.py` | Response shapes; 422 on invalid input; typed errors with no stack trace; health endpoints |
+| Streaming | `tests/api/test_sessions_api.py` | Event ordering; `[DONE]` always sent, including after a failure |
+| HTML sanitisation | `frontend/src/components/Artifacts/sanitize.test.ts` | Scripts, event handlers, `javascript:` URLs, nested iframes, forms and remote stylesheets all neutralised; layout and inline CSS preserved; removals reported |
+| SSE parsing | `frontend/src/services/api.test.ts` | Frames split across chunk boundaries reassembled; multiple frames per chunk; multi-byte characters intact; error events surfaced; malformed payloads skipped without aborting |
+
+Two of these exist because the bug shipped once. The chunker termination tests
+encode the exact token counts that used to stall the cursor. The SSE
+reassembly tests encode a split frame, which the old client dropped silently.
+
+---
+
+## Manual UI test plan
+
+**Setup.** From a clean state, so this also tests the documented install path:
+
+```bash
+docker compose down -v
 ./startup.sh
 ```
 
-**Expected Output:**
-```
-🚀 Starting The Lenny Growth Assistant...
-📝 Creating .env from template...
-🐳 Starting Docker services...
-⏳ Waiting for services to be ready...
-   Waiting for Ollama...
-✅ Ollama is ready!
-📦 Pulling Ollama models (this may take a few minutes)...
-✅ Models pulled!
-✅ Backend is ready!
-✨ The Lenny Growth Assistant is running!
+Expect it to finish unattended, print the URLs, and report a non-zero chunk
+count. Then open http://localhost:3000.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📱 Frontend:     http://localhost:3000
-🔧 Backend API:  http://localhost:8080
-📊 API Docs:     http://localhost:8080/docs
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+---
 
-**Time:** 5-10 minutes (model downloads)
-
-### 2. Verify Services
+### 1 · Services and index are healthy
 
 ```bash
-# Check all containers running
-docker ps
-
-# Expected: 5 containers
-# lenny-postgres, lenny-chromadb, lenny-ollama, lenny-backend, lenny-frontend
+docker compose ps
+curl -s localhost:8080/health/retrieval
+curl -s localhost:8080/health/llm
 ```
+
+- [ ] All five containers `Up`, and postgres, chromadb and backend `(healthy)`
+- [ ] `/health/retrieval` shows `"chromadb": "available"` and `indexed_chunks` above zero
+- [ ] `/health/llm` shows `"status": "available"` with both models pulled
+- [ ] The sidebar footer shows the same chunk count
 
 ---
 
-## Manual Test Plan
+### 2 · A grounded answer with citations
 
-### Test 1: Health Checks
+Ask: **"What does Jen Abel say about closing enterprise deals?"**
 
-**Objective:** Verify all services are healthy
+- [ ] Three pulsing dots appear before the first token
+- [ ] Text streams in rather than appearing all at once
+- [ ] A **sources** row appears below the answer
+- [ ] Expanding it shows episode title, guest, date and a match percentage
+- [ ] The title links to the episode and opens in a new tab
+- [ ] The answer attributes claims by name, e.g. "Jen Abel argues…"
+- [ ] Match percentages are between 0 and 100
 
-**Steps:**
-1. Open http://localhost:8080/health
-2. Open http://localhost:8080/health/llm
-
-**Expected:**
-```json
-// /health
-{
-  "status": "healthy",
-  "environment": "development",
-  "default_model": "ollama"
-}
-
-// /health/llm
-{
-  "ollama": "available",
-  "anthropic": "not_configured"
-}
-```
-
-**Pass Criteria:** Both endpoints return 200 OK
+*This is the single most important test. An answer with no sources row means the
+index is empty; see Troubleshooting in the README.*
 
 ---
 
-### Test 2: Frontend Loads
+### 3 · Follow-up keeps context
 
-**Objective:** React app renders without errors
+In the same conversation, ask: **"Why does that matter?"**
 
-**Steps:**
-1. Open http://localhost:3000
-2. Check browser console (F12 → Console)
-
-**Expected:**
-- Page shows "🎯 Lenny Growth Assistant"
-- Input field visible
-- No errors in console
-
-**Pass Criteria:** UI renders, no console errors
+- [ ] The reply addresses the previous topic without you restating it
+- [ ] It does not start a fresh, unrelated answer
 
 ---
 
-### Test 3: Ask a Question (Chat Flow)
+### 4 · Honest refusal
 
-**Objective:** End-to-end RAG chat works
+Ask something no episode covers: **"What is the best recipe for sourdough bread?"**
 
-**Test Case 3.1: Basic Question**
-
-**Steps:**
-1. Type: "What did Lenny say about product-market fit?"
-2. Click **Send**
-3. Wait for response
-
-**Expected:**
-- "🔍 Searching transcripts..." appears
-- Streaming response begins within 3-5 seconds
-- Answer includes citations (e.g., "[Rahul Vohra on PMF]")
-- Source badges visible below message
-
-**Pass Criteria:**
-- Response arrives
-- Contains relevant answer
-- Shows source citations
-
-**Test Case 3.2: No Context Available**
-
-**Steps:**
-1. Type: "What's the weather today?"
-2. Click **Send**
-
-**Expected:**
-```
-I don't have enough information about weather in Lenny's transcripts.
-Try asking about product management, growth, or startup topics.
-```
-
-**Pass Criteria:** Model admits it doesn't have context
+- [ ] The assistant says it cannot answer from Lenny's transcripts
+- [ ] It does **not** answer from general knowledge
+- [ ] It does **not** show fabricated sources
 
 ---
 
-### Test 4: Generate Ship 30 Essay
+### 5 · Sessions are independent
 
-**Objective:** Essay generation works with correct word count
+- [ ] Click **+ New chat**; the thread clears
+- [ ] Ask something unrelated, e.g. "How do you price a second product line?"
+- [ ] The answer shows no awareness of the earlier conversation
+- [ ] Both conversations appear in the sidebar, titled from their first messages
+- [ ] Clicking the earlier one restores its full history with sources intact
+- [ ] Reload the browser; sessions and history survive
+- [ ] Deleting a session removes it and clears the view if it was open
 
-**Steps (via API - frontend Ship 30 button not implemented in MVP):**
+---
+
+### 6 · Ship 30 essay
+
+Ask: **"Write a Ship 30 essay about talent density"**
+
+- [ ] The artifact viewer opens on the right with the essay
+- [ ] It has a clear hook in the opening line
+- [ ] Headed sections, bullets and selective bold
+- [ ] A specific closing takeaway
+- [ ] Claims are attributed to guests
+- [ ] Roughly 1,250 words, not truncated mid-sentence
+
+For explicit control:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/ship30/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "topic": "Finding product-market fit",
-    "word_count": 300,
-    "hook_style": "question"
-  }'
+curl -s -X POST localhost:8080/api/v1/ship30/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"topic":"talent density","word_count":600,"hook_style":"contrarian"}' \
+  | jq '{word_count, target_word_count, within_tolerance, sources: (.sources|length)}'
 ```
 
-**Expected Response:**
-```json
-{
-  "essay": "How do you know when you've found product-market fit?\n\n...",
-  "word_count": 298,
-  "target_word_count": 300,
-  "sources": [...],
-  "model_provider": "ollama"
-}
+- [ ] `within_tolerance` is `true`
+- [ ] `sources` is greater than zero
+
+---
+
+### 7 · Artifact viewer
+
+Ask: **"Create a markdown checklist for running a first enterprise sales call"**
+
+- [ ] Renders as a formatted document, not a code block
+- [ ] **Source** tab shows the raw Markdown
+- [ ] **Copy** copies it
+- [ ] **Download** saves a `.md` file with a sensible name
+- [ ] **Close** hides the panel and the conversation widens
+- [ ] The chip on the message reopens it
+
+---
+
+### 8 · Artifact security
+
+Ask: **"Make an HTML page showing three pricing tiers"**
+
+- [ ] Renders with styling and layout intact
+- [ ] The **Source** tab contains no `<script>` tag and no `on*` attribute
+
+Then verify the boundary directly. Open the browser console:
+
+```js
+document.querySelector('.artifact-frame').getAttribute('sandbox')
+// → "" (empty: every capability withheld)
 ```
 
-**Pass Criteria:**
-- Word count within ±10% of target (270-330 for target 300)
-- Essay follows Hook-Body-CTA structure
-- Sources array not empty
+- [ ] The `sandbox` attribute is present and empty
+- [ ] The frame's document contains a `Content-Security-Policy` meta with `default-src 'none'`
+
+To see the notice, ask for a page containing a script or an `onerror` handler:
+
+- [ ] A **"Blocked for safety"** notice names what was stripped
+- [ ] Nothing executes: no alert, no console error from injected code
 
 ---
 
-### Test 5: Model Toggle (If Anthropic Key Set)
+### 9 · Model toggle and fallback
 
-**Objective:** Switch between Claude and Ollama
+With no `ANTHROPIC_API_KEY` set:
 
-**Setup:**
-1. Add Anthropic API key to `.env`:
-   ```bash
-   ANTHROPIC_API_KEY=sk-ant-...
-   ```
-2. Restart backend: `docker-compose restart backend`
+- [ ] The header shows **Local · Ollama** with a green dot
+- [ ] **Cloud · Claude** shows a grey dot
+- [ ] Selecting Claude displays a hint that requests fall back to the local model
+- [ ] Sending a message still works, answered by Ollama
 
-**Steps:**
-1. Send message with Ollama (default)
-2. Switch to Claude in UI (future feature - test via API)
+With a key configured (`echo "ANTHROPIC_API_KEY=sk-ant-..." >> .env`, then
+`docker compose up -d backend`):
 
-**API Test:**
-```bash
-curl -X POST http://localhost:8080/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What is PMF?",
-    "model_provider": "claude"
-  }'
-```
-
-**Expected:** Response uses Claude model
-
-**Pass Criteria:** Both models work without errors
+- [ ] Claude shows a green dot
+- [ ] Answers arrive noticeably faster and are more detailed
+- [ ] Citations still appear, since embeddings remain local
 
 ---
 
-### Test 6: Source Citations Clickable
+### 10 · Failure handling
 
-**Objective:** Source badges are interactive
+Each of these should degrade visibly, never silently.
 
-**Steps:**
-1. Ask a question that returns sources
-2. Hover over source badge
-3. Click source badge (future: opens transcript)
-
-**Expected:**
-- Hover shows tooltip with similarity score
-- Click does nothing (not implemented in MVP)
-
-**Pass Criteria:** Badges render correctly
-
----
-
-### Test 7: Streaming UI
-
-**Objective:** Streaming response updates in real-time
-
-**Steps:**
-1. Ask: "Explain growth loops in detail"
-2. Watch message as it streams
-
-**Expected:**
-- Text appears word-by-word
-- Typing indicator (▊) visible at cursor
-- No flash of unstyled content
-
-**Pass Criteria:** Smooth streaming, no UI glitches
-
----
-
-### Test 8: Error Handling
-
-**Test Case 8.1: Ollama Offline**
-
-**Steps:**
-1. Stop Ollama: `docker-compose stop ollama`
-2. Send a message
-
-**Expected:**
-```
-⚠️ Ollama is unavailable
-Try again or switch to Claude
-```
-
-**Cleanup:** `docker-compose start ollama`
-
-**Test Case 8.2: Empty Input**
-
-**Steps:**
-1. Click **Send** with empty input
-
-**Expected:** Send button disabled, nothing happens
-
-**Pass Criteria:** Errors shown clearly, system recovers
-
----
-
-## Performance Testing
-
-### Latency Benchmarks
-
-**Test:** Measure end-to-end response time
-
-**Steps:**
-1. Open browser DevTools → Network tab
-2. Send message
-3. Note time from request to first token
-
-**Expected Latency:**
-- Retrieval: <1s
-- First token: <2s (Ollama), <3s (Claude)
-- Full response: <10s
-
-**Pass Criteria:** Meets latency targets
-
----
-
-## Docker Logs Review
-
-### Check for Errors
+**Model unavailable.**
 
 ```bash
-# Backend logs
-docker-compose logs backend | grep ERROR
-
-# ChromaDB logs
-docker-compose logs chromadb | grep ERROR
-
-# Ollama logs
-docker-compose logs ollama | tail -20
+docker compose stop ollama
 ```
 
-**Pass Criteria:** No critical errors
+- [ ] Sending a message shows an error on the message with a hint
+- [ ] The composer re-enables; the UI is not stuck
+- [ ] `/health/llm` reports Ollama unavailable
+
+```bash
+docker compose start ollama   # recover
+```
+
+**Vector store unavailable.**
+
+```bash
+docker compose stop chromadb
+```
+
+- [ ] `/health/retrieval` returns 503 naming ChromaDB
+- [ ] The chat surfaces a retrieval error rather than answering ungrounded
+
+```bash
+docker compose start chromadb
+```
+
+**Database unavailable.**
+
+```bash
+docker compose stop postgres
+```
+
+- [ ] `/health/db` returns 503
+- [ ] The error names the database, not a generic 500
+
+```bash
+docker compose start postgres
+```
+
+**Stopping mid-stream.** Ask for a long essay and press **Stop**:
+
+- [ ] Generation halts
+- [ ] Partial text remains on screen
+- [ ] The composer re-enables immediately
 
 ---
 
-## Cleanup & Reset
+### 11 · Responsive and accessible
 
-### Stop Services
+Resize the browser, or use device emulation:
+
+- [ ] **> 1100px** three columns with the artifact open
+- [ ] **820–1100px** the artifact becomes a full-height overlay
+- [ ] **< 820px** single column; ☰ opens the sidebar as a drawer
+- [ ] No horizontal page scrolling at any width
+
+Keyboard only, no mouse:
+
+- [ ] Tab reaches the sidebar, composer, send button, sources toggle and every artifact control
+- [ ] Focus outlines are clearly visible
+- [ ] Enter sends; Shift+Enter inserts a newline
+- [ ] Arrow keys or Tab operate the model toggle as a radio group
+
+---
+
+### 12 · Ingestion is idempotent
 
 ```bash
-docker-compose down
+docker compose exec backend python -m app.scripts.ingest_transcripts --limit 3
 ```
 
-### Delete All Data (Fresh Start)
+- [ ] Reports transcripts **skipped**, not processed
+- [ ] No unique-constraint error
+- [ ] The chunk count in `/health/retrieval` is unchanged
+
+---
+
+### 13 · Observability
 
 ```bash
-docker-compose down -v  # WARNING: Deletes database + vectors
+docker compose logs backend --tail=20
 ```
 
-### Restart from Scratch
+- [ ] Each line is a single JSON object
+- [ ] Request lines carry `request_id`, `status_code` and `duration_ms`
+- [ ] A response's `X-Request-ID` header matches a log line:
 
 ```bash
-rm .env  # Remove config
-./startup.sh  # Re-run setup
+curl -si -X POST localhost:8080/api/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"test"}' | grep -i x-request-id
 ```
 
 ---
 
-## Known Issues (Expected)
+### 14 · No secrets committed
 
-1. **Transcript Ingestion:** If no transcripts in `data/transcripts/`, RAG returns empty context
-   - **Fix:** Clone https://github.com/LennysNewsletter/lennys-newsletter and copy `.md` files
+```bash
+git ls-files | grep -E '^\.env$'          # expect no output
+git log -p | grep -iE 'sk-ant-|ghp_'      # expect no output
+```
 
-2. **First Ollama Request Slow:** Cold start takes 5-10 seconds
-   - **Fix:** Expected, subsequent requests faster
-
-3. **Frontend Ship 30 Button:** Not implemented in MVP
-   - **Workaround:** Use API directly (see Test 4)
-
-4. **No Session Sidebar:** Only one session per browser
-   - **Workaround:** Refresh page to start new session
+- [ ] `.env` is untracked
+- [ ] `.env.example` exists and contains no real values
+- [ ] `agent_transcripts/` contains no keys, emails or absolute home paths
 
 ---
 
-## Demo Video Recording Checklist
+## Known limitations
 
-Before recording, test these flows:
+Stated plainly so they are not mistaken for bugs.
 
-- [x] Ask question about PMF → Get cited answer
-- [x] Generate Ship 30 essay via API → Correct word count
-- [x] Show streaming response
-- [x] Show source citations
-- [x] Explain one trade-off (ChromaDB vs pgvector)
-
-**Recommended Flow:**
-1. **Intro (30s):** "Hi, I'm Monika. This is the Lenny Growth Assistant..."
-2. **Demo (90s):**
-   - Ask: "What did Lenny say about product-market fit?"
-   - Show streaming response
-   - Click source badge
-   - Generate Ship 30 essay (via curl or Postman)
-3. **Trade-Off (30s):** "I chose ChromaDB over pgvector because..."
-4. **Outro (10s):** "One-command startup, fully local, ready for production."
-
-**Total:** 2:40 (under 3 min limit)
-
----
-
-## Submission Checklist
-
-Before submitting:
-
-- [x] All tests pass
-- [x] Demo video uploaded to YouTube (unlisted)
-- [x] GitHub repo public: https://github.com/khichar-monika15/lenny-growth-assistant
-- [x] README.md has setup instructions
-- [x] No `.env` file committed (check with `git status`)
-- [x] All commits as khichar-monika15
-
-**Submission Form:** https://forms.gle/LgotDHNVxW1mbzNE7
-
----
-
-## Troubleshooting
-
-### Frontend not loading
-```bash
-docker-compose logs frontend | tail -20
-```
-**Common fix:** `docker-compose restart frontend`
-
-### Backend 500 errors
-```bash
-docker-compose logs backend | grep ERROR
-```
-**Common fix:** Check DATABASE_URL in .env
-
-### Ollama "model not found"
-```bash
-docker-compose exec ollama ollama list
-```
-**Fix:** Re-pull models: `docker-compose exec ollama ollama pull llama3.1:8b`
-
-### ChromaDB connection refused
-```bash
-docker-compose ps chromadb
-```
-**Fix:** `docker-compose restart chromadb`
-
----
-
-## Success Metrics
-
-**Demo is ready when:**
-- All Test 1-7 pass
-- No ERROR logs in backend
-- Latency <10s for standard questions
-- Source citations visible on every response
-
-**Good luck, Monika! 🚀**
+- **First response after startup is slow.** The model loads into memory on first
+  use. Ten to thirty seconds is normal on CPU.
+- **Local answers are shorter and less nuanced than Claude's.** Expected for an
+  8B model. Grounding carries most of the quality.
+- **Routing keys off explicit phrasing.** "Write an essay about X" routes to
+  Ship 30; "help me think through X in a shareable way" does not. Use the
+  `skill` parameter to force it.
+- **Only 15 episodes are indexed by default.** Questions about other episodes
+  will be honestly refused. Run with `INGEST_LIMIT=0` for the full catalogue.
+- **Artifacts are read-only.** No in-place editing.
+- **No dark theme, and no skip-to-content link.** Unfinished, not considered done.

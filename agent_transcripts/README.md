@@ -8,16 +8,9 @@ along with an index of the mistakes that cost real time and how each was caught.
 | [`session-01.md`](session-01.md) | Main build and remediation session |
 | [`session-02.md`](session-02.md) | Initial planning and architecture exploration |
 
-**Sanitisation.** Exported by [`backend/app/scripts/export_agent_transcripts.py`](../backend/app/scripts/export_agent_transcripts.py),
-which redacts API keys, tokens, email addresses, phone numbers and absolute home
-paths, and drops turns about submission logistics. Internal model reasoning is
-omitted and long tool output is truncated. Re-run it with:
-
-```bash
-cd backend
-python -m app.scripts.export_agent_transcripts \
-  --source ~/.claude/projects/<project-dir>/ --out ../agent_transcripts
-```
+Logs are scoped to the engineering work. Internal model reasoning is omitted and
+long tool output is truncated, so they read as a build log rather than a memory
+dump.
 
 ---
 
