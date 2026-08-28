@@ -25,16 +25,8 @@ class ChatRequest(BaseModel):
     model_provider: Optional[str] = None
 
 
-# Initialize components (in production, use dependency injection)
-retriever = VectorRetriever(
-    chroma_host=settings.CHROMA_HOST,
-    chroma_port=settings.CHROMA_PORT,
-    collection_name=settings.CHROMA_COLLECTION_NAME
-)
-
-context_assembler = ContextAssembler(
-    max_tokens=settings.CONTEXT_MAX_TOKENS
-)
+# Components will be initialized lazily per request
+# (avoids startup dependency on ChromaDB being ready)
 
 
 def get_llm_provider(provider_name: Optional[str] = None):
@@ -73,7 +65,12 @@ async def chat_stream(request: ChatRequest):
             # Step 1: Retrieval
             yield f"data: {json.dumps({'type': 'retrieval_start'})}\n\n"
 
-            # Initialize retriever if needed
+            # Initialize retriever
+            retriever = VectorRetriever(
+                chroma_host=settings.CHROMA_HOST,
+                chroma_port=settings.CHROMA_PORT,
+                collection_name=settings.CHROMA_COLLECTION_NAME
+            )
             await retriever.initialize()
 
             # Generate query embedding (using Ollama for embeddings)
@@ -95,6 +92,7 @@ async def chat_stream(request: ChatRequest):
             )
 
             # Assemble context
+            context_assembler = ContextAssembler(max_tokens=settings.CONTEXT_MAX_TOKENS)
             assembled = context_assembler.assemble_context(chunks)
 
             # Send sources
@@ -152,6 +150,11 @@ async def chat(request: ChatRequest):
     Non-streaming chat endpoint.
     """
     # Initialize retriever
+    retriever = VectorRetriever(
+        chroma_host=settings.CHROMA_HOST,
+        chroma_port=settings.CHROMA_PORT,
+        collection_name=settings.CHROMA_COLLECTION_NAME
+    )
     await retriever.initialize()
 
     # Generate query embedding
@@ -162,6 +165,7 @@ async def chat(request: ChatRequest):
 
     # Retrieve and assemble
     chunks = await retriever.retrieve(query_embedding, top_k=settings.RETRIEVAL_TOP_K)
+    context_assembler = ContextAssembler(max_tokens=settings.CONTEXT_MAX_TOKENS)
     assembled = context_assembler.assemble_context(chunks)
 
     # Generate response
