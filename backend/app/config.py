@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     RETRIEVAL_TOP_K: int = 10
     CONTEXT_MAX_TOKENS: int = 4000
 
+    # Ingestion
+    CHROMADB_HOST: str = "chromadb"
+    CHROMADB_PORT: int = 8000
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -82,9 +82,11 @@ async def chat_stream(request: ChatRequest):
                 "model": settings.OLLAMA_EMBEDDING_MODEL
             })
 
-            # For simplicity, use a simple embedding (in production, use proper embedding endpoint)
-            # This is a placeholder - proper embedding would use Ollama's /api/embeddings
-            query_embedding = [0.0] * 768  # Placeholder
+            # Generate query embedding
+            from app.services.embedding_service import EmbeddingService
+            embedding_service = EmbeddingService()
+            query_embedding = await embedding_service.generate_embedding(request.message)
+            await embedding_service.close()
 
             # Retrieve chunks
             chunks = await retriever.retrieve(
@@ -152,8 +154,11 @@ async def chat(request: ChatRequest):
     # Initialize retriever
     await retriever.initialize()
 
-    # Placeholder embedding (same as above)
-    query_embedding = [0.0] * 768
+    # Generate query embedding
+    from app.services.embedding_service import EmbeddingService
+    embedding_service = EmbeddingService()
+    query_embedding = await embedding_service.generate_embedding(request.message)
+    await embedding_service.close()
 
     # Retrieve and assemble
     chunks = await retriever.retrieve(query_embedding, top_k=settings.RETRIEVAL_TOP_K)
