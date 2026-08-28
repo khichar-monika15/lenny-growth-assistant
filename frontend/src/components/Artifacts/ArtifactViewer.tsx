@@ -35,8 +35,12 @@ export function ArtifactViewer({ artifact, theme, onClose }: Props) {
     const link = document.createElement('a')
     link.href = url
     link.download = `${slugify(artifact.title)}.${extension}`
+    // Firefox ignores a click on an anchor that is not in the document, and
+    // the URL must outlive the click before it is revoked.
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(url)
+    document.body.removeChild(link)
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 
   return (

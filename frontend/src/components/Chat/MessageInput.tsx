@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent } from 'react'
+import { useEffect, useRef, type KeyboardEvent } from 'react'
 
 interface Props {
   value: string
@@ -21,6 +21,13 @@ export function MessageInput({
   disabled,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Sending clears the value but not the inline height set while typing, so a
+  // multi-line message left the composer stretched and empty.
+  useEffect(() => {
+    const element = textareaRef.current
+    if (element && value === '') element.style.height = 'auto'
+  }, [value])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter sends; Shift+Enter inserts a newline.

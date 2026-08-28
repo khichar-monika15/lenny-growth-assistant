@@ -55,6 +55,11 @@ function toPlainText(markdown: string): string {
     .trim()
 }
 
+function wordCount(markdown: string): number {
+  const text = toPlainText(markdown)
+  return text ? text.split(/\s+/).length : 0
+}
+
 function summarise(content: string): string {
   const text = toPlainText(content)
   if (text.length <= ARTIFACT_PREVIEW_CHARS) return text
@@ -135,7 +140,7 @@ export function Message({
               <span className="artifact-card-meta">
                 {message.artifact.type === 'html' ? 'HTML document' : 'Markdown document'}
                 {' · '}
-                {toPlainText(message.artifact.content).split(' ').length.toLocaleString()} words
+                {wordCount(message.artifact.content).toLocaleString()} words
               </span>
             </span>
             <span className="artifact-card-action" aria-hidden="true">

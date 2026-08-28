@@ -87,7 +87,10 @@ export default function App() {
   }, [isStreaming, refreshSessions])
 
   const handleSend = async () => {
-    const text = input
+    const text = input.trim()
+    // Only clear once we know there is something to send, otherwise a stray
+    // whitespace-only send wipes what the user typed.
+    if (!text || isStreaming) return
     setInput('')
     await send(text, provider)
   }
@@ -96,6 +99,17 @@ export default function App() {
     setInput('')
     await send(prompt, provider)
   }
+
+  // Escape closes whichever overlay is open, artifact panel first.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (activeArtifact) setActiveArtifact(null)
+      else if (sidebarOpen) setSidebarOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeArtifact, setActiveArtifact, sidebarOpen])
 
   const handleSelectSession = async (id: string) => {
     setSidebarOpen(false)
@@ -155,6 +169,14 @@ export default function App() {
       </header>
 
       <div className="layout">
+        {sidebarOpen && (
+          <button
+            className="sidebar-backdrop"
+            aria-label="Close chat history"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         <div className={`sidebar-wrapper ${sidebarOpen ? 'open' : ''}`}>
           <SessionSidebar
             sessions={sessions}
