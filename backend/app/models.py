@@ -1,5 +1,5 @@
 """Database models using SQLAlchemy."""
-from sqlalchemy import Column, String, Integer, Text, Boolean, TIMESTAMP, ForeignKey, ARRAY
+from sqlalchemy import Column, String, Integer, Text, Boolean, TIMESTAMP, ForeignKey, ARRAY, Date
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
@@ -46,7 +46,7 @@ class Transcript(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     github_path = Column(String(500), unique=True, nullable=False)
     title = Column(String(500), nullable=False)
-    publication_date = Column(String(50))
+    publication_date = Column(Date)
     guests = Column(ARRAY(Text))
     word_count = Column(Integer)
     content = Column(Text, nullable=False)

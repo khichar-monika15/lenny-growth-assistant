@@ -2,8 +2,10 @@
 import hashlib
 import asyncio
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, date
 from uuid import uuid4
+
+from sqlalchemy import select
 
 from app.database import get_session
 from app.models import Transcript, Chunk
@@ -54,7 +56,8 @@ async def ingest_transcripts(limit: int = None) -> Dict[str, Any]:
 
     try:
         # Fetch transcript index
-        index = await fetcher.fetch_index()
+        index_data = await fetcher.fetch_index()
+        index = index_data.get("podcasts", [])
 
         if limit:
             index = index[:limit]
@@ -64,9 +67,11 @@ async def ingest_transcripts(limit: int = None) -> Dict[str, Any]:
                 try:
                     # Extract metadata
                     title = entry.get("title", "Untitled")
-                    file_path = entry.get("file", "")
-                    publication_date = entry.get("date")
-                    guests = entry.get("guests", [])
+                    file_path = entry.get("filename", "")
+                    date_str = entry.get("date")
+                    publication_date = datetime.strptime(date_str, "%Y-%m-%d").date() if date_str else None
+                    guest = entry.get("guest", "")
+                    guests = [guest] if guest else []
 
                     # Fetch transcript content
                     content = await fetcher.fetch_transcript(file_path)
@@ -75,12 +80,11 @@ async def ingest_transcripts(limit: int = None) -> Dict[str, Any]:
                     content_hash = hashlib.sha256(content.encode()).hexdigest()
 
                     # Check if already ingested with same content
-                    existing = await session.execute(
-                        f"SELECT id, content_hash FROM transcripts WHERE github_path = '{file_path}'"
-                    )
-                    existing_row = existing.fetchone()
+                    stmt = select(Transcript).where(Transcript.github_path == file_path)
+                    result = await session.execute(stmt)
+                    existing_row = result.scalar_one_or_none()
 
-                    if existing_row and existing_row[1] == content_hash:
+                    if existing_row and existing_row.content_hash == content_hash:
                         stats["transcripts_skipped"] += 1
                         continue
 
@@ -167,7 +171,7 @@ async def ingest_transcripts(limit: int = None) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     # Run ingestion
-    result = asyncio.run(ingest_transcripts(limit=5))  # Test with 5 transcripts
+    result = asyncio.run(ingest_transcripts(limit=1))  # Test with 1 transcript
     print("\nIngestion complete:")
     print(f"- Processed: {result['transcripts_processed']}")
     print(f"- Skipped: {result['transcripts_skipped']}")

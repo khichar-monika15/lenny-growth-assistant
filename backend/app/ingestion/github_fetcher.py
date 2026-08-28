@@ -8,10 +8,10 @@ class GitHubFetcher:
     """Fetch transcript files from GitHub."""
 
     REPO_OWNER = "LennysNewsletter"
-    REPO_NAME = "lennys-newsletter"
+    REPO_NAME = "lennys-newsletterpodcastdata"
     BRANCH = "main"
-    INDEX_PATH = "podcast-data/index.json"
-    TRANSCRIPT_BASE = "podcast-data"
+    INDEX_PATH = "index.json"
+    TRANSCRIPT_BASE = ""
 
     def __init__(self):
         self.settings = get_settings()
