@@ -92,26 +92,36 @@ export function sanitizeHtml(dirty: string): SanitizeResult {
 export const FRAME_CSP =
   "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;"
 
-/** Wrap sanitised HTML in a minimal, CSP-locked document for `srcdoc`. */
-export function buildFrameDocument(sanitized: string): string {
+/**
+ * Wrap sanitised HTML in a minimal, CSP-locked document for `srcdoc`.
+ *
+ * The frame is a separate document, so it inherits nothing from the app's
+ * stylesheet and needs the palette passed in explicitly.
+ */
+export function buildFrameDocument(sanitized: string, theme: 'light' | 'dark' = 'light'): string {
+  const dark = theme === 'dark'
+  const palette = dark
+    ? { bg: '#1d1f23', fg: '#eceef1', border: '#303439', sunken: '#26292e' }
+    : { bg: '#ffffff', fg: '#1f2933', border: '#d8dee6', sunken: '#f5f7fa' }
+
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">
 <style>
-  :root { color-scheme: light; }
+  :root { color-scheme: ${dark ? 'dark' : 'light'}; }
   body {
     margin: 0;
     padding: 20px;
     font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: #1f2933;
-    background: #ffffff;
+    color: ${palette.fg};
+    background: ${palette.bg};
   }
   img, table { max-width: 100%; }
   table { border-collapse: collapse; }
-  th, td { border: 1px solid #d8dee6; padding: 6px 10px; text-align: left; }
-  pre { overflow-x: auto; background: #f5f7fa; padding: 12px; border-radius: 6px; }
+  th, td { border: 1px solid ${palette.border}; padding: 6px 10px; text-align: left; }
+  pre { overflow-x: auto; background: ${palette.sunken}; padding: 12px; border-radius: 6px; }
 </style>
 </head>
 <body>${sanitized}</body>

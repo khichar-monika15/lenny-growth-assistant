@@ -5,7 +5,10 @@ import { MessageInput } from './components/Chat/MessageInput'
 import { MessageList } from './components/Chat/MessageList'
 import { ModelSelector } from './components/ModelToggle/ModelSelector'
 import { SessionSidebar } from './components/Session/SessionSidebar'
+import { ThemeToggle } from './components/ThemeToggle'
+import { usePaneWidth } from './hooks/usePaneWidth'
 import { useChat } from './hooks/useChat'
+import { useTheme } from './hooks/useTheme'
 import { api } from './services/api'
 import type { ModelProvider, ProviderHealth, RetrievalHealth, SessionSummary } from './types'
 
@@ -18,6 +21,7 @@ export default function App() {
     setActiveArtifact,
     send,
     stop,
+    regenerate,
     startNewChat,
     loadSession,
   } = useChat()
@@ -28,6 +32,22 @@ export default function App() {
   const [retrieval, setRetrieval] = useState<RetrievalHealth | null>(null)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const theme = useTheme()
+
+  const sidebar = usePaneWidth({
+    edge: 'right',
+    min: 200,
+    max: 460,
+    initial: 264,
+    storageKey: 'lenny.sidebarWidth',
+  })
+  const artifact = usePaneWidth({
+    edge: 'left',
+    min: 340,
+    max: 900,
+    initial: 480,
+    storageKey: 'lenny.artifactWidth',
+  })
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -72,6 +92,11 @@ export default function App() {
     await send(text, provider)
   }
 
+  const handleExample = async (prompt: string) => {
+    setInput('')
+    await send(prompt, provider)
+  }
+
   const handleSelectSession = async (id: string) => {
     setSidebarOpen(false)
     try {
@@ -88,7 +113,17 @@ export default function App() {
   }
 
   return (
-    <div className={`app ${activeArtifact ? 'with-artifact' : ''}`}>
+    <div
+      className={`app ${activeArtifact ? 'with-artifact' : ''} ${
+        sidebar.isDragging || artifact.isDragging ? 'resizing' : ''
+      }`}
+      style={
+        {
+          '--sidebar-width': `${sidebar.width}px`,
+          '--artifact-width': `${artifact.width}px`,
+        } as React.CSSProperties
+      }
+    >
       <header className="header">
         <button
           className="sidebar-toggle"
@@ -100,9 +135,16 @@ export default function App() {
         </button>
 
         <div className="header-title">
-          <h1>Lenny Growth Assistant</h1>
-          <p>Grounded in Lenny&apos;s Podcast transcripts</p>
+          <span className="header-mark" aria-hidden="true">
+            LG
+          </span>
+          <span className="header-text">
+            <h1>Lenny Growth Assistant</h1>
+            <p>Grounded in Lenny&apos;s Podcast transcripts</p>
+          </span>
         </div>
+
+        <ThemeToggle preference={theme.preference} onCycle={theme.cycle} />
 
         <ModelSelector
           value={provider}
@@ -127,11 +169,15 @@ export default function App() {
           />
         </div>
 
+        <div {...sidebar.handleProps} />
+
         <main className="chat-container">
           <MessageList
             messages={messages}
             isStreaming={isStreaming}
             onOpenArtifact={setActiveArtifact}
+            onPickExample={handleExample}
+            onRegenerate={() => regenerate(provider)}
           />
           <MessageInput
             value={input}
@@ -143,7 +189,14 @@ export default function App() {
         </main>
 
         {activeArtifact && (
-          <ArtifactViewer artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />
+          <>
+            <div {...artifact.handleProps} />
+            <ArtifactViewer
+              artifact={activeArtifact}
+              theme={theme.resolved}
+              onClose={() => setActiveArtifact(null)}
+            />
+          </>
         )}
       </div>
     </div>

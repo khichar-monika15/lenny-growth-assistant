@@ -5,13 +5,14 @@ import { SandboxedHtml } from './SandboxedHtml'
 
 interface Props {
   artifact: Artifact
+  theme: 'light' | 'dark'
   onClose: () => void
 }
 
 type Tab = 'preview' | 'source'
 
 /** Side panel that renders a generated document beside the conversation. */
-export function ArtifactViewer({ artifact, onClose }: Props) {
+export function ArtifactViewer({ artifact, theme, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('preview')
   const [copied, setCopied] = useState(false)
 
@@ -86,7 +87,7 @@ export function ArtifactViewer({ artifact, onClose }: Props) {
             <code>{artifact.content}</code>
           </pre>
         ) : artifact.type === 'html' ? (
-          <SandboxedHtml html={artifact.content} />
+          <SandboxedHtml html={artifact.content} theme={theme} />
         ) : (
           <MarkdownRenderer content={artifact.content} />
         )}

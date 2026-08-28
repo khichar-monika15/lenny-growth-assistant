@@ -103,6 +103,26 @@ class MessageOut(BaseModel):
     token_count: Optional[int] = None
     model_provider: Optional[str] = None
     created_at: datetime
+    #: Generated document, if this turn produced one. Returned so reopening a
+    #: session restores the artifact rather than losing it.
+    artifact: Optional[ArtifactOut] = None
+    intent: Optional[str] = None
+
+    @classmethod
+    def from_model(cls, message) -> "MessageOut":
+        metadata = message.extra_metadata or {}
+        return cls(
+            id=message.id,
+            session_id=message.session_id,
+            role=message.role,
+            content=message.content,
+            sources=message.sources or [],
+            token_count=message.token_count,
+            model_provider=message.model_provider,
+            created_at=message.created_at,
+            artifact=metadata.get("artifact"),
+            intent=metadata.get("intent"),
+        )
 
 
 class SessionDetail(SessionOut):

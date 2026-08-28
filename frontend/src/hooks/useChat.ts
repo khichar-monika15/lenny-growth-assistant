@@ -20,6 +20,9 @@ function toMessage(stored: StoredMessage): Message {
     role: stored.role,
     content: stored.content,
     sources: stored.sources ?? [],
+    // Restored so switching away from a chat and back does not lose the
+    // generated document.
+    artifact: stored.artifact ?? undefined,
     createdAt: stored.created_at,
   }
 }
@@ -130,6 +133,30 @@ export function useChat() {
     setIsStreaming(false)
   }, [])
 
+  /**
+   * Re-ask the most recent question.
+   *
+   * Drops the previous pair locally so the thread does not show the old and
+   * new answer side by side. The original turn stays in the database, which
+   * is the honest record of what was actually generated.
+   */
+  const regenerate = useCallback(
+    async (provider: ModelProvider) => {
+      if (isStreaming) return
+
+      const lastUser = [...messages].reverse().find((m) => m.role === 'user')
+      if (!lastUser) return
+
+      setMessages((current) => {
+        const index = current.findIndex((m) => m.id === lastUser.id)
+        return index === -1 ? current : current.slice(0, index)
+      })
+
+      await send(lastUser.content, provider)
+    },
+    [isStreaming, messages, send],
+  )
+
   const startNewChat = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
@@ -145,8 +172,12 @@ export function useChat() {
     setActiveArtifact(null)
 
     const session = await api.getSession(id)
+    const restored = session.messages.map(toMessage)
     setSessionId(session.id)
-    setMessages(session.messages.map(toMessage))
+    setMessages(restored)
+
+    const lastArtifact = [...restored].reverse().find((m) => m.artifact)?.artifact
+    if (lastArtifact) setActiveArtifact(lastArtifact)
   }, [])
 
   return {
@@ -157,6 +188,7 @@ export function useChat() {
     setActiveArtifact,
     send,
     stop,
+    regenerate,
     startNewChat,
     loadSession,
   }

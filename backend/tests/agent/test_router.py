@@ -90,6 +90,18 @@ class TestTopicExtraction:
 
         assert route.options["topic"] == "Write a Ship 30 essay"
 
+    @pytest.mark.parametrize(
+        "message,expected",
+        [
+            ("Write a Ship 30 essay about: building talent density", "building talent density"),
+            ("Write an essay on: pricing strategy", "pricing strategy"),
+            ("Write an essay about retention loops.", "retention loops"),
+        ],
+    )
+    def test_colon_separated_topics_are_extracted(self, router, message, expected):
+        """The Ship 30 endpoint phrases its own prompt with a colon."""
+        assert router.route(message).options["topic"] == expected
+
 
 class TestFormatDetection:
     def test_html_request_selects_html(self, router):

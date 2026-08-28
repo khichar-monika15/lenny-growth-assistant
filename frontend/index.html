@@ -2,9 +2,30 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Answers grounded in Lenny's Podcast transcripts, with citations."
+    />
     <title>Lenny Growth Assistant</title>
+    <script>
+      // Resolve the theme before first paint. Without this the light palette
+      // renders for a frame and then flips, which is very visible on dark.
+      (function () {
+        try {
+          var stored = localStorage.getItem('lenny.theme') || 'system'
+          var dark =
+            stored === 'dark' ||
+            (stored === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          var theme = dark ? 'dark' : 'light'
+          document.documentElement.setAttribute('data-theme', theme)
+          document.documentElement.style.colorScheme = theme
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light')
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

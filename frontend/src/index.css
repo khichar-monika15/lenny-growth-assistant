@@ -1,19 +1,39 @@
+/*
+ * Base reset only.
+ *
+ * All colour lives in App.css as theme tokens. This file must not set a
+ * background: it is imported after App.css, so a hardcoded value here wins
+ * and leaves the app light while the tokens say dark.
+ */
+
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: #f9fafb;
+html,
+body,
+#root {
+  height: 100%;
 }
 
-#root {
-  min-height: 100vh;
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+img,
+svg,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+input,
+textarea,
+button,
+select {
+  font: inherit;
+  color: inherit;
 }

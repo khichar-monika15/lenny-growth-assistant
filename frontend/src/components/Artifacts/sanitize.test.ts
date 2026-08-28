@@ -91,3 +91,24 @@ describe('buildFrameDocument', () => {
     expect(doc).toContain('<p>hi</p>')
   })
 })
+
+describe('buildFrameDocument themes', () => {
+  it('renders a light palette by default', () => {
+    const doc = buildFrameDocument('<p>hi</p>')
+
+    expect(doc).toContain('color-scheme: light')
+    expect(doc).toContain('#ffffff')
+  })
+
+  it('renders a dark palette when asked', () => {
+    const doc = buildFrameDocument('<p>hi</p>', 'dark')
+
+    expect(doc).toContain('color-scheme: dark')
+    expect(doc).toContain('#1d1f23')
+  })
+
+  it('keeps the CSP in both themes', () => {
+    expect(buildFrameDocument('<p>hi</p>', 'dark')).toContain("default-src 'none'")
+    expect(buildFrameDocument('<p>hi</p>', 'light')).toContain("default-src 'none'")
+  })
+})

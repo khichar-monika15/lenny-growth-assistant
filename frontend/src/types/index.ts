@@ -48,6 +48,8 @@ export interface StoredMessage {
   token_count: number | null
   model_provider: string | null
   created_at: string
+  artifact?: Artifact | null
+  intent?: string | null
 }
 
 export interface SessionDetail extends SessionSummary {

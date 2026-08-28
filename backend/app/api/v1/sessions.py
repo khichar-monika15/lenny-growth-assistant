@@ -71,7 +71,7 @@ async def get_session(session_id: UUID, db: AsyncSession = Depends(get_db)) -> S
 
     return SessionDetail(
         **SessionOut.model_validate(session).model_dump(),
-        messages=[MessageOut.model_validate(m) for m in messages],
+        messages=[MessageOut.from_model(m) for m in messages],
     )
 
 
@@ -90,7 +90,7 @@ async def get_messages(
     except Exception as exc:  # noqa: BLE001
         raise to_http_exception(exc) from exc
 
-    return [MessageOut.model_validate(m) for m in messages]
+    return [MessageOut.from_model(m) for m in messages]
 
 
 @router.delete(

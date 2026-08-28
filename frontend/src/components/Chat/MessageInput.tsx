@@ -9,7 +9,8 @@ interface Props {
   disabled?: boolean
 }
 
-const MAX_ROWS = 6
+const LINE_HEIGHT = 24
+const MAX_ROWS = 7
 
 export function MessageInput({
   value,
@@ -31,43 +32,50 @@ export function MessageInput({
 
   const autoGrow = (element: HTMLTextAreaElement) => {
     element.style.height = 'auto'
-    const lineHeight = 24
-    element.style.height = `${Math.min(element.scrollHeight, lineHeight * MAX_ROWS)}px`
+    element.style.height = `${Math.min(element.scrollHeight, LINE_HEIGHT * MAX_ROWS)}px`
   }
 
   return (
     <div className="input-area">
-      <label className="sr-only" htmlFor="chat-input">
-        Ask a question about product and growth
-      </label>
+      <div className="input-inner">
+        <label className="sr-only" htmlFor="chat-input">
+          Ask a question about product and growth
+        </label>
 
-      <textarea
-        id="chat-input"
-        ref={textareaRef}
-        rows={1}
-        value={value}
-        placeholder="Ask about product-market fit, growth, hiring…"
-        disabled={disabled}
-        onChange={(event) => {
-          onChange(event.target.value)
-          autoGrow(event.target)
-        }}
-        onKeyDown={handleKeyDown}
-      />
+        <textarea
+          id="chat-input"
+          ref={textareaRef}
+          rows={1}
+          value={value}
+          placeholder="Ask about product-market fit, growth, hiring…"
+          disabled={disabled}
+          onChange={(event) => {
+            onChange(event.target.value)
+            autoGrow(event.target)
+          }}
+          onKeyDown={handleKeyDown}
+        />
 
-      {isStreaming ? (
-        <button className="send-button stop" onClick={onStop}>
-          Stop
-        </button>
-      ) : (
-        <button
-          className="send-button"
-          onClick={onSend}
-          disabled={disabled || !value.trim()}
-        >
-          Send
-        </button>
-      )}
+        {isStreaming ? (
+          <button className="send-button stop" onClick={onStop}>
+            Stop
+          </button>
+        ) : (
+          <button
+            className="send-button"
+            onClick={onSend}
+            disabled={disabled || !value.trim()}
+            aria-label="Send message"
+          >
+            Send
+          </button>
+        )}
+      </div>
+
+      <p className="input-footnote">
+        Answers are grounded in Lenny&apos;s Podcast transcripts. Enter to send,
+        Shift+Enter for a new line.
+      </p>
     </div>
   )
 }

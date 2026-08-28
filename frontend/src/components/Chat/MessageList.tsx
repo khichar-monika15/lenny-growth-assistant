@@ -1,21 +1,37 @@
 import { useEffect, useRef } from 'react'
-import type { Artifact, Message } from '../../types'
-import { MarkdownRenderer } from '../Artifacts/MarkdownRenderer'
-import { SourceList } from './SourceList'
+import type { Artifact, Message as MessageType } from '../../types'
+import { Message } from './Message'
 
 interface Props {
-  messages: Message[]
+  messages: MessageType[]
   isStreaming: boolean
   onOpenArtifact: (artifact: Artifact) => void
+  onPickExample: (prompt: string) => void
+  onRegenerate: () => void
 }
 
 const EXAMPLES = [
-  'What does Jen Abel say about closing enterprise deals?',
-  'Write a Ship 30 essay about talent density',
-  'Create a markdown checklist for a first enterprise sales call',
+  {
+    label: 'Ask a question',
+    prompt: 'What does Jen Abel say about getting the first enterprise meeting?',
+  },
+  {
+    label: 'Write an essay',
+    prompt: 'Write a Ship 30 essay about building talent density',
+  },
+  {
+    label: 'Make a document',
+    prompt: 'Create a markdown checklist for running a first enterprise sales call',
+  },
 ]
 
-export function MessageList({ messages, isStreaming, onOpenArtifact }: Props) {
+export function MessageList({
+  messages,
+  isStreaming,
+  onOpenArtifact,
+  onPickExample,
+  onRegenerate,
+}: Props) {
   const endRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const pinnedToBottom = useRef(true)
@@ -35,25 +51,34 @@ export function MessageList({ messages, isStreaming, onOpenArtifact }: Props) {
   }, [])
 
   useEffect(() => {
-    if (pinnedToBottom.current) {
-      endRef.current?.scrollIntoView({ block: 'end' })
-    }
+    if (pinnedToBottom.current) endRef.current?.scrollIntoView({ block: 'end' })
   }, [messages])
 
   if (messages.length === 0) {
     return (
       <div className="messages" ref={listRef}>
         <div className="empty-state">
+          <div className="empty-mark" aria-hidden="true">
+            LG
+          </div>
           <h2>Ask about product and growth</h2>
           <p>
             Every answer is grounded in Lenny&apos;s Podcast transcripts and cites the
             episodes it drew from.
           </p>
-          <ul className="examples">
+
+          <div className="examples">
             {EXAMPLES.map((example) => (
-              <li key={example}>{example}</li>
+              <button
+                key={example.prompt}
+                className="example-card"
+                onClick={() => onPickExample(example.prompt)}
+              >
+                <span className="example-label">{example.label}</span>
+                <span className="example-prompt">{example.prompt}</span>
+              </button>
             ))}
-          </ul>
+          </div>
         </div>
       </div>
     )
@@ -65,50 +90,19 @@ export function MessageList({ messages, isStreaming, onOpenArtifact }: Props) {
         {isStreaming ? 'Assistant is replying' : 'Reply complete'}
       </div>
 
-      {messages.map((message, index) => {
-        const isLast = index === messages.length - 1
-        const awaitingFirstToken = isLast && isStreaming && !message.content
-
-        return (
-          <article key={message.id} className={`message ${message.role}`}>
-            <div className="message-role">{message.role === 'user' ? 'You' : 'Assistant'}</div>
-
-            <div className="message-content">
-              {message.role === 'assistant' ? (
-                awaitingFirstToken ? (
-                  <span className="thinking" aria-label="Thinking">
-                    <span /> <span /> <span />
-                  </span>
-                ) : (
-                  <MarkdownRenderer content={message.content} />
-                )
-              ) : (
-                message.content
-              )}
-            </div>
-
-            {message.error && (
-              <p className="message-error" role="alert">
-                {message.error}
-              </p>
-            )}
-
-            {message.artifact && (
-              <button
-                className="artifact-chip"
-                onClick={() => onOpenArtifact(message.artifact!)}
-              >
-                <span className="artifact-badge">{message.artifact.type}</span>
-                {message.artifact.title}
-              </button>
-            )}
-
-            {message.sources && <SourceList sources={message.sources} />}
-          </article>
-        )
-      })}
-
-      <div ref={endRef} />
+      <div className="messages-inner">
+        {messages.map((message, index) => (
+          <Message
+            key={message.id}
+            message={message}
+            isStreaming={isStreaming && index === messages.length - 1}
+            isLast={index === messages.length - 1}
+            onOpenArtifact={onOpenArtifact}
+            onRegenerate={onRegenerate}
+          />
+        ))}
+        <div ref={endRef} />
+      </div>
     </div>
   )
 }

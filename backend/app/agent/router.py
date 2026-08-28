@@ -122,8 +122,21 @@ class AgentRouter:
 
     @staticmethod
     def _extract_topic(message: str) -> str:
-        """Pull the subject out of 'write an essay about X' so retrieval targets X."""
-        match = re.search(r"\b(?:about|on|covering|regarding)\b\s+(.+)", message, re.IGNORECASE)
+        """
+        Pull the subject out of "write an essay about X" so retrieval targets X.
+
+        The separator may be a colon ("essay about: X"), which is how the
+        Ship 30 endpoint phrases its own synthesised prompt. Missing that made
+        the whole sentence the topic, which both weakened retrieval and
+        produced titles like "Ship 30 essay: Write a Ship 30 essay about: X".
+        """
+        match = re.search(
+            r"\b(?:about|on|covering|regarding|titled)\b\s*:?\s+(.+)",
+            message,
+            re.IGNORECASE,
+        )
         if match:
-            return match.group(1).strip(" .?!\"'")
+            topic = match.group(1).strip(" .?!\"'")
+            if topic:
+                return topic
         return message
