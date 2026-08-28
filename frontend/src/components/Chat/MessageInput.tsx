@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react'
 
 interface Props {
   value: string
@@ -22,12 +22,32 @@ export function MessageInput({
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Sending clears the value but not the inline height set while typing, so a
-  // multi-line message left the composer stretched and empty.
+  const resize = useCallback(() => {
+    const element = textareaRef.current
+    if (!element) return
+
+    // Collapse first, or scrollHeight keeps reporting the previous height and
+    // the box can only ever grow.
+    element.style.height = 'auto'
+    const next = Math.min(element.scrollHeight, LINE_HEIGHT * MAX_ROWS)
+    element.style.height = `${next}px`
+    // Only scroll once the content genuinely exceeds the cap.
+    element.style.overflowY = element.scrollHeight > next ? 'auto' : 'hidden'
+  }, [])
+
+  // Recompute whenever the text changes, including when sending clears it.
+  useEffect(resize, [resize, value])
+
+  // Narrowing the pane rewraps the text onto more lines. Without this the
+  // height stays put and the field scrolls instead of growing.
   useEffect(() => {
     const element = textareaRef.current
-    if (element && value === '') element.style.height = 'auto'
-  }, [value])
+    if (!element || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(resize)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [resize])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter sends; Shift+Enter inserts a newline.
@@ -35,11 +55,6 @@ export function MessageInput({
       event.preventDefault()
       onSend()
     }
-  }
-
-  const autoGrow = (element: HTMLTextAreaElement) => {
-    element.style.height = 'auto'
-    element.style.height = `${Math.min(element.scrollHeight, LINE_HEIGHT * MAX_ROWS)}px`
   }
 
   return (
@@ -56,10 +71,7 @@ export function MessageInput({
           value={value}
           placeholder="Ask about product-market fit, growth, hiring…"
           disabled={disabled}
-          onChange={(event) => {
-            onChange(event.target.value)
-            autoGrow(event.target)
-          }}
+          onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
         />
 

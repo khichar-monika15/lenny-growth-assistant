@@ -30,6 +30,9 @@ const FORBIDDEN_TAGS = [
   'textarea',
   'meta',
   'applet',
+  // Models emit a full document. Head elements survive into the sanitised
+  // body, where <title> renders as stray text above the content.
+  'title',
 ]
 
 const FORBIDDEN_ATTR = ['srcdoc', 'formaction', 'ping', 'http-equiv']

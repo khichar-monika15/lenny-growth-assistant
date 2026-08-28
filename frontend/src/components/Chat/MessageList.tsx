@@ -8,6 +8,7 @@ interface Props {
   onOpenArtifact: (artifact: Artifact) => void
   onPickExample: (prompt: string) => void
   onRegenerate: () => void
+  onEdit: (messageId: string, text: string) => void
 }
 
 const EXAMPLES = [
@@ -31,6 +32,7 @@ export function MessageList({
   onOpenArtifact,
   onPickExample,
   onRegenerate,
+  onEdit,
 }: Props) {
   const endRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -91,16 +93,23 @@ export function MessageList({
       </div>
 
       <div className="messages-inner">
-        {messages.map((message, index) => (
+        {(() => {
+          // Only the latest question is editable: editing an earlier one would
+          // discard everything after it without warning.
+          const lastUserIndex = messages.map((m) => m.role).lastIndexOf('user')
+          return messages.map((message, index) => (
           <Message
             key={message.id}
             message={message}
             isStreaming={isStreaming && index === messages.length - 1}
             isLast={index === messages.length - 1}
+            canEdit={index === lastUserIndex && !isStreaming}
             onOpenArtifact={onOpenArtifact}
             onRegenerate={onRegenerate}
+            onEdit={(text) => onEdit(message.id, text)}
           />
-        ))}
+          ))
+        })()}
         <div ref={endRef} />
       </div>
     </div>

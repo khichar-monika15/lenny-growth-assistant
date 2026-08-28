@@ -34,14 +34,27 @@ SHIP30_PATTERNS = _compile([
     r"\bessay\b[^.?!]{0,30}\babout\b",
 ])
 
-#: Explicit requests for a rendered document rather than a conversational reply.
+#: Requests that describe a document on their own, with or without prior turns.
 ARTIFACT_PATTERNS = _compile([
-    r"\b(write|draft|generate|create|build|make|put together)\b[^.?!]{0,50}"
+    # A making verb plus a document noun and its subject.
+    r"\b(write|draft|generate|create|build|make|put together|give me)\b[^.?!]{0,50}"
     r"\b(document|doc|one[- ]pager|onepager|checklist|template|table|summary sheet|"
-    r"cheat ?sheet|playbook|brief|outline|report|page|landing page|mockup)\b",
-    r"\b(as|in|to)\b\s+(markdown|html)\b",
-    r"\bhtml\b[^.?!]{0,30}\b(snippet|page|css)\b",
-    r"\brender\b[^.?!]{0,30}\b(html|markdown)\b",
+    r"cheat ?sheet|playbook|brief|outline|report|page|landing page|mockup|"
+    r"web ?page|site)\b",
+    # A named format with its own subject: "an HTML page showing the tiers".
+    r"\b(html|markdown)\b[^.?!]{0,25}\b(page|snippet|doc|document|file)\b"
+    r"[^.?!]{0,40}\b(about|for|showing|of|on|with)\b",
+])
+
+#: Requests that only mean something as a follow-up, because they refer to
+#: whatever was just produced: "make it html", "can you create an html version".
+#: Routing these without prior turns would ask the model to convert nothing.
+FOLLOWUP_ARTIFACT_PATTERNS = _compile([
+    r"\b(convert|turn|render|export|reformat|rewrite)\b[^.?!]{0,40}\b(html|markdown|css)\b",
+    r"\b(html|markdown)\b[^.?!]{0,25}\b(version|format|file|output)\b",
+    r"\b(as|in|to|into)\b\s+(an?\s+)?(markdown|html)\b",
+    r"\b(make|do|give me) (it|that|this)\b[^.?!]{0,20}\b(html|markdown)\b",
+    r"\b(create|make|build|generate|give me)\b[^.?!]{0,30}\b(html|markdown)\b",
 ])
 
 
@@ -76,7 +89,12 @@ class AgentRouter:
         except KeyError:
             raise ValueError(f"Unknown skill: {name}") from None
 
-    def route(self, message: str, forced_skill: Optional[str] = None) -> Route:
+    def route(
+        self,
+        message: str,
+        forced_skill: Optional[str] = None,
+        has_history: bool = False,
+    ) -> Route:
         """
         Pick the skill for a message.
 
@@ -84,6 +102,9 @@ class AgentRouter:
             message: The user's message
             forced_skill: Skill name to use instead of classifying, for
                 endpoints that target a skill explicitly
+            has_history: Whether the session already has prior turns. Some
+                requests only mean something as a follow-up, so they are
+                matched only when there is something to refer back to.
 
         Returns:
             The selected Route
@@ -107,6 +128,14 @@ class AgentRouter:
                 self._artifact,
                 self._artifact.name,
                 f"matched document request: {match!r}",
+                {"format": ArtifactSkill.detect_format(text)},
+            )
+
+        if has_history and (match := self._first_match(FOLLOWUP_ARTIFACT_PATTERNS, text)):
+            return Route(
+                self._artifact,
+                self._artifact.name,
+                f"matched follow-up format request: {match!r}",
                 {"format": ArtifactSkill.detect_format(text)},
             )
 

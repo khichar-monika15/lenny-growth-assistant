@@ -157,6 +157,28 @@ export function useChat() {
     [isStreaming, messages, send],
   )
 
+  /**
+   * Replace a user turn with edited text and answer it again.
+   *
+   * Everything from that turn onward is dropped locally, matching how current
+   * chat assistants behave: the edit supersedes the reply below it. The
+   * original turn stays in the database as the honest record.
+   */
+  const editMessage = useCallback(
+    async (messageId: string, text: string, provider: ModelProvider) => {
+      const trimmed = text.trim()
+      if (!trimmed || isStreaming) return
+
+      setMessages((current) => {
+        const index = current.findIndex((m) => m.id === messageId)
+        return index === -1 ? current : current.slice(0, index)
+      })
+
+      await send(trimmed, provider)
+    },
+    [isStreaming, send],
+  )
+
   const startNewChat = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
@@ -189,6 +211,7 @@ export function useChat() {
     send,
     stop,
     regenerate,
+    editMessage,
     startNewChat,
     loadSession,
   }

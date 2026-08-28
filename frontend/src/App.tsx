@@ -22,6 +22,7 @@ export default function App() {
     send,
     stop,
     regenerate,
+    editMessage,
     startNewChat,
     loadSession,
   } = useChat()
@@ -200,6 +201,7 @@ export default function App() {
             onOpenArtifact={setActiveArtifact}
             onPickExample={handleExample}
             onRegenerate={() => regenerate(provider)}
+            onEdit={(id, text) => editMessage(id, text, provider)}
           />
           <MessageInput
             value={input}

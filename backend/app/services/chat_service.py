@@ -114,7 +114,7 @@ async def _prepare(
     await session_service.add_message(db, session.id, "user", message)
     await session_service.touch(db, session, first_message=message)
 
-    route = router.route(message, forced_skill=forced_skill)
+    route = router.route(message, forced_skill=forced_skill, has_history=bool(history))
     route.options.update(options or {})
 
     context = SkillContext(message=message, history=history, options=route.options)

@@ -692,8 +692,116 @@ button {
   justify-content: flex-end;
 }
 
+/* Icon sits outside the bubble, vertically centred, revealed on hover so it
+   never competes with the message itself. */
+.user-turn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 82%;
+  min-width: 0;
+}
+
+.edit-button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.message.user:hover .edit-button,
+.edit-button:focus-visible {
+  opacity: 1;
+}
+
+.edit-button:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+/* ------------------------- Editing state ---------------------- */
+
+.message.user.editing {
+  justify-content: stretch;
+}
+
+.user-edit {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.user-edit textarea {
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.94rem;
+  line-height: 1.6;
+  color: var(--text);
+  overflow-y: auto;
+  max-height: 40vh;
+}
+
+.user-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.edit-cancel,
+.edit-save {
+  padding: 7px 15px;
+  border-radius: var(--radius);
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.edit-cancel {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.edit-cancel:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.edit-save {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.edit-save:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.edit-save:disabled {
+  background: var(--send-disabled);
+  cursor: not-allowed;
+}
+
 .user-bubble {
-  max-width: 78%;
+  min-width: 0;
   padding: 11px 16px;
   border-radius: 18px 18px 4px 18px;
   background: var(--accent);
@@ -1021,6 +1129,7 @@ button {
 
 .input-inner textarea {
   flex: 1;
+  min-width: 0;
   resize: none;
   border: none;
   outline: none;
@@ -1030,6 +1139,9 @@ button {
   font-size: 0.93rem;
   line-height: 24px;
   max-height: 168px;
+  /* Overflow is toggled in JS once the content passes the cap, so a single
+     line never shows a scrollbar. */
+  overflow-y: hidden;
   color: var(--text);
 }
 

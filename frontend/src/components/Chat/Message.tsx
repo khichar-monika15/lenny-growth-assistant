@@ -2,13 +2,16 @@ import { useState } from 'react'
 import type { Artifact, Message as MessageType } from '../../types'
 import { MarkdownRenderer } from '../Artifacts/MarkdownRenderer'
 import { SourceList } from './SourceList'
+import { UserMessage } from './UserMessage'
 
 interface Props {
   message: MessageType
   isStreaming: boolean
   isLast: boolean
+  canEdit: boolean
   onOpenArtifact: (artifact: Artifact) => void
   onRegenerate: () => void
+  onEdit: (text: string) => void
 }
 
 const ICONS = {
@@ -71,8 +74,10 @@ export function Message({
   message,
   isStreaming,
   isLast,
+  canEdit,
   onOpenArtifact,
   onRegenerate,
+  onEdit,
 }: Props) {
   const [copied, setCopied] = useState(false)
 
@@ -92,11 +97,7 @@ export function Message({
   }
 
   if (isUser) {
-    return (
-      <article className="message user">
-        <div className="user-bubble">{message.content}</div>
-      </article>
-    )
+    return <UserMessage content={message.content} canEdit={canEdit} onEdit={onEdit} />
   }
 
   return (

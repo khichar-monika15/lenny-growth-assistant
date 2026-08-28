@@ -112,3 +112,34 @@ describe('buildFrameDocument themes', () => {
     expect(buildFrameDocument('<p>hi</p>', 'light')).toContain("default-src 'none'")
   })
 })
+
+describe('full HTML documents from the model', () => {
+  const FULL_DOC = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pricing</title>
+<style>.tier{border:1px solid #ccc}</style>
+</head>
+<body>
+<h1>Pricing tiers</h1>
+<div class="tier"><h2>Starter</h2></div>
+</body>
+</html>`
+
+  it('keeps the body content and the stylesheet', () => {
+    const { html } = sanitizeHtml(FULL_DOC)
+
+    expect(html).toContain('<h1>Pricing tiers</h1>')
+    expect(html).toContain('.tier')
+    expect(html).toContain('class="tier"')
+  })
+
+  it('drops head elements that would render as stray text', () => {
+    const { html } = sanitizeHtml(FULL_DOC)
+
+    expect(html).not.toContain('<title')
+    expect(html).not.toContain('Pricing</title>')
+    expect(html).not.toContain('<meta')
+  })
+})

@@ -42,11 +42,59 @@ class TestArtifactRouting:
             "Build me a one-pager on activation metrics",
             "Make an HTML page showing the pricing tiers",
             "Put together a template for user interviews",
-            "Give me a summary in markdown",
         ],
     )
     def test_document_requests_route_to_artifact(self, router, message):
         assert router.route(message).intent == ArtifactSkill.name
+
+FOLLOWUP_FORMAT_REQUESTS = [
+    ("Can you create html version.", "html"),
+    ("can you create an html version", "html"),
+    ("convert this to html", "html"),
+    ("turn that into html", "html"),
+    ("make it html", "html"),
+    ("export as html", "html"),
+    ("give me a markdown version", "markdown"),
+    ("render it as markdown", "markdown"),
+    # "in markdown" refers to prior output, so this belongs here rather than
+    # among the self-contained requests.
+    ("Give me a summary in markdown", "markdown"),
+]
+
+
+class TestFollowUpFormatRequests:
+    """
+    "Make it html" refers to whatever was just produced.
+
+    These used to fall through to a conversational answer, so the model wrote
+    a code block into the thread instead of producing an artifact. They only
+    match when the session has prior turns: with nothing to convert, the same
+    words are better served by a normal answer.
+    """
+
+    @pytest.mark.parametrize("message,expected_format", FOLLOWUP_FORMAT_REQUESTS)
+    def test_route_to_artifact_when_there_is_history(self, router, message, expected_format):
+        route = router.route(message, has_history=True)
+
+        assert route.intent == ArtifactSkill.name
+        assert route.options["format"] == expected_format
+
+    @pytest.mark.parametrize("message,_format", FOLLOWUP_FORMAT_REQUESTS)
+    def test_stay_conversational_as_a_first_message(self, router, message, _format):
+        assert router.route(message, has_history=False).intent == GroundedAnswerSkill.name
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Create a markdown checklist for a sales call",
+            "Make an HTML page showing the pricing tiers",
+            "Build me a one-pager on activation metrics",
+        ],
+    )
+    def test_self_contained_requests_do_not_need_history(self, router, message):
+        """A request that names its own subject stands alone."""
+        assert router.route(message, has_history=False).intent == ArtifactSkill.name
+        assert router.route(message, has_history=True).intent == ArtifactSkill.name
 
 
 class TestDefaultRouting:
