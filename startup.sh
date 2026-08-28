@@ -53,13 +53,30 @@ if [ ! -f .env ]; then
   ok "To use Claude instead, add ANTHROPIC_API_KEY to .env and rerun."
 fi
 
-# shellcheck disable=SC1091
-set -a; . ./.env; set +a
+# Read one key out of .env.
+#
+# Deliberately does not `source` the file. Docker Compose parses .env with its
+# own rules, which are not shell rules, so sourcing it executes whatever it
+# contains: an apostrophe in a value or an unbalanced quote aborts the whole
+# script with "unexpected EOF". This reads the value as plain text instead.
+read_env() {
+  local key="$1" default="$2" value
+  [ -f .env ] || { printf '%s' "$default"; return; }
 
-INGEST_LIMIT="${INGEST_LIMIT:-15}"
+  value=$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" .env | tail -n 1)
+  # Strip surrounding quotes and any trailing carriage return from CRLF files.
+  value=${value%$'\r'}
+  value=${value#\"}; value=${value%\"}
+  value=${value#\'}; value=${value%\'}
+
+  printf '%s' "${value:-$default}"
+}
+
+# An explicit environment variable still wins over the file.
+INGEST_LIMIT="${INGEST_LIMIT:-$(read_env INGEST_LIMIT 15)}"
 SKIP_INGEST="${SKIP_INGEST:-0}"
-CHAT_MODEL="${OLLAMA_CHAT_MODEL:-llama3.2:3b}"
-EMBED_MODEL="${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
+CHAT_MODEL="${OLLAMA_CHAT_MODEL:-$(read_env OLLAMA_CHAT_MODEL llama3.2:3b)}"
+EMBED_MODEL="${OLLAMA_EMBEDDING_MODEL:-$(read_env OLLAMA_EMBEDDING_MODEL nomic-embed-text)}"
 
 # --- Services ---------------------------------------------------------------
 
